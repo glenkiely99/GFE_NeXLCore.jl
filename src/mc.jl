@@ -226,7 +226,7 @@ struct VoxelizedRegion <: AbstractRegion
     end
 end
 
-struct VoxelizedRegion <: AbstractRegion
+struct Region <: AbstractRegion
     shape::GeometryPrimitive{3,Float64}
     material::Material
     parent::Union{Nothing,Region}
