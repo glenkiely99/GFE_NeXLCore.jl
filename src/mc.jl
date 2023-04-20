@@ -184,7 +184,49 @@ intersection(r, p::Particle) = intersection(r, previous(p), position(p))
 
 A `Region` combines a geometric primative and a `Material` (with `:Density` property) and may fully contain zero or more child `Region`s.
 """
-struct Region
+
+abstract type AbstractRegion end
+
+struct VoxelizedRegion <: AbstractRegion
+    shape::GeometryPrimitive{3, Float64}
+    material::Material
+    parent::Union{Nothing, AbstractRegion}
+    children::Vector{AbstractRegion}
+    name::String
+
+    function VoxelisedRegion(
+        sh::T,
+        mat::Material,
+        parent::Union{Nothing,AbstractRegion},
+        name::Union{Nothing,String} = nothing,
+        ntests = 1000,
+    ) where {T}
+        @assert mat[:Density] > 0.0
+        name = something(
+            name,
+            isnothing(parent) ? "Root" : "$(parent.name)[$(length(parent.children)+1)]",
+        )
+        res = new(sh, mat, parent, Region[], name)
+        if !isnothing(parent) # if a parent shape IS specified, since the ! is there
+            @assert all(
+                all(isinside(parent.shape, sh.vertices)), # Test against vertices of sh
+                    1:size(sh.vertices, 1), # this does 1 tests which is wanted. Only edge boundaries
+            ) "The child $sh is not fully contained within the parent $(parent.shape)."
+            @assert all(
+                ch -> all(
+                    !isinside(ch.shape, sh.vertices),
+                    1:size(sh.vertices, 1),
+                ),
+                parent.children,
+            ) "The child $sh overlaps a child of the parent shape."
+            push!(parent.children, res)
+        else
+        end
+        return res
+    end
+end
+
+struct Region <: AbstractRegion
     shape::GeometryPrimitive{3,Float64}
     material::Material
     parent::Union{Nothing,Region}
