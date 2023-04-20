@@ -206,7 +206,7 @@ struct VoxelizedRegion <: AbstractRegion
             name,
             isnothing(parent) ? "Root" : "$(parent.name)[$(length(parent.children)+1)]",
         )
-        res = new(sh, mat, parent, Region[], name)
+        res = new(sh, mat, parent, VoxelizedRegion[], name)
         if !isnothing(parent) # if a parent shape IS specified, since the ! is there
             @assert all(
                 all(isinside(parent.shape, sh.vertices)), # Test against vertices of sh
