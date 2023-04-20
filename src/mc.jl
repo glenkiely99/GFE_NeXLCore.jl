@@ -229,8 +229,8 @@ end
 struct Region <: AbstractRegion
     shape::GeometryPrimitive{3,Float64}
     material::Material
-    parent::Union{Nothing,Region}
-    children::Vector{Region}
+    parent::Union{Nothing,AbstractRegion}
+    children::Vector{AbstractRegion}
     name::String
 
     function Region(
