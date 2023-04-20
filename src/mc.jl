@@ -208,7 +208,7 @@ struct VoxelisedRegion <: AbstractRegion
         )
         res = new(sh, mat, parent, VoxelisedRegion[], name)
         if !isnothing(parent) # if a parent shape IS specified, since the ! is there
-	    tolerance = (1e-4*sh.widths[3]) # This may not be applicable for all cases.
+	    tolerance = (1e-4*sh.widths[3]) # Glen - This may not be applicable for all cases.
 	    vertices = [
     		sh.origin + Point(tolerance, tolerance, tolerance),
     		sh.origin + Point(0, 0, sh.widths[3]) - Point(0, 0, tolerance) + Point(tolerance, tolerance, 0),
