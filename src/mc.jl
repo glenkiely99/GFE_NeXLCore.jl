@@ -208,18 +208,25 @@ struct VoxelisedRegion <: AbstractRegion
         )
         res = new(sh, mat, parent, VoxelisedRegion[], name)
         if !isnothing(parent) # if a parent shape IS specified, since the ! is there
-            @assert all(
-                all(isinside(parent.shape, sh.vertices)), # Test against vertices of sh
-                    1:size(sh.vertices, 1), # this does 1 tests which is wanted. Only edge boundaries
-            ) "The child $sh is not fully contained within the parent $(parent.shape)."
-            @assert all(
-                ch -> all(
-                    !isinside(ch.shape, sh.vertices),
-                    1:size(sh.vertices, 1),
-                ),
-                parent.children,
-            ) "The child $sh overlaps a child of the parent shape."
-            push!(parent.children, res)
+	    tolerance = (1e-4*sh.widths[3]) # This may not be applicable for all cases.
+	    vertices = [
+    		sh.origin + Point(tolerance, tolerance, tolerance),
+    		sh.origin + Point(0, 0, sh.widths[3]) - Point(0, 0, tolerance) + Point(tolerance, tolerance, 0),
+    		sh.origin + Point(0, sh.widths[2], 0) - Point(0, tolerance, 0) + Point(tolerance, 0, tolerance),
+    		sh.origin + Point(0, sh.widths[2], sh.widths[3]) - Point(0, tolerance, tolerance) + Point(tolerance, 0, 0),
+    		sh.origin + Point(sh.widths[1], 0, 0) - Point(tolerance, 0, 0) + Point(0, tolerance, tolerance),
+    		sh.origin + Point(sh.widths[1], 0, sh.widths[3]) - Point(tolerance, 0, tolerance) + Point(0, tolerance, 0),
+    		sh.origin + Point(sh.widths[1], sh.widths[2], 0) - Point(tolerance, tolerance, 0) + Point(0, 0, tolerance),
+    		sh.origin + Point(sh.widths[1], sh.widths[2], sh.widths[3]) - Point(tolerance, tolerance, tolerance),
+	    ]
+	    @assert all(isinside(parent.shape, v) for v in vertices) "The child $sh is not fully contained within the parent $(parent.shape)."
+
+	    @assert all(
+    		ch -> all(!isinside(ch.shape, v) for v in vertices),
+    		parent.children,
+	    ) "The child $sh overlaps a child of the parent shape."
+
+	    push!(parent.children, res)
         else
         end
         return res
@@ -236,7 +243,7 @@ struct Region <: AbstractRegion
     function Region(
         sh::T,
         mat::Material,
-        parent::Union{Nothing,Region},
+        parent::Union{Nothing,AbstractRegion},
         name::Union{Nothing,String} = nothing,
         ntests = 1000,
     ) where {T}

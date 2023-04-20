@@ -289,7 +289,7 @@ include("mchelpers.jl")
 export Position, previous # Base.position
 export Particle, Electron
 export RectangularShape, SphericalShape # aliases for 3D GeometryBasics shapes
-export Region # A shape and a material
+export Region, VoxelisedRegion # A shape and a material
 export scatter # The Particle transport function 
 export gun # A source of starter Particle objects
 export trajectory # Calculates Point and Region pairs as the Particle traverses the sample
