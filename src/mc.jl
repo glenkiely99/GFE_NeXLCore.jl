@@ -187,7 +187,7 @@ A `Region` combines a geometric primative and a `Material` (with `:Density` prop
 
 abstract type AbstractRegion end
 
-struct VoxelizedRegion <: AbstractRegion
+struct VoxelisedRegion <: AbstractRegion
     shape::GeometryPrimitive{3, Float64}
     material::Material
     parent::Union{Nothing, AbstractRegion}
@@ -206,7 +206,7 @@ struct VoxelizedRegion <: AbstractRegion
             name,
             isnothing(parent) ? "Root" : "$(parent.name)[$(length(parent.children)+1)]",
         )
-        res = new(sh, mat, parent, VoxelizedRegion[], name)
+        res = new(sh, mat, parent, VoxelisedRegion[], name)
         if !isnothing(parent) # if a parent shape IS specified, since the ! is there
             @assert all(
                 all(isinside(parent.shape, sh.vertices)), # Test against vertices of sh
