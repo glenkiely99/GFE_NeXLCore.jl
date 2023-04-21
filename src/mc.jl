@@ -206,8 +206,54 @@ struct VoxelisedRegion <: AbstractRegion
             name,
             isnothing(parent) ? "Root" : "$(parent.name)[$(length(parent.children)+1)]",
         )
-        res = new(sh, mat, parent, VoxelisedRegion[], name)
+        res = new(sh, mat, parent, AbstractRegion[], name)
         if !isnothing(parent) # if a parent shape IS specified, since the ! is there
+	    tolerance = (1e-4*sh.widths[3]) # Glen - This may not be applicable for all cases.
+	    vertices = [
+    		sh.origin + Point(tolerance, tolerance, tolerance),
+    		sh.origin + Point(0, 0, sh.widths[3]) - Point(0, 0, tolerance) + Point(tolerance, tolerance, 0),
+    		sh.origin + Point(0, sh.widths[2], 0) - Point(0, tolerance, 0) + Point(tolerance, 0, tolerance),
+    		sh.origin + Point(0, sh.widths[2], sh.widths[3]) - Point(0, tolerance, tolerance) + Point(tolerance, 0, 0),
+    		sh.origin + Point(sh.widths[1], 0, 0) - Point(tolerance, 0, 0) + Point(0, tolerance, tolerance),
+    		sh.origin + Point(sh.widths[1], 0, sh.widths[3]) - Point(tolerance, 0, tolerance) + Point(0, tolerance, 0),
+    		sh.origin + Point(sh.widths[1], sh.widths[2], 0) - Point(tolerance, tolerance, 0) + Point(0, 0, tolerance),
+    		sh.origin + Point(sh.widths[1], sh.widths[2], sh.widths[3]) - Point(tolerance, tolerance, tolerance),
+	    ]
+	    @assert all(isinside(parent.shape, v) for v in vertices) "The child $sh is not fully contained within the parent $(parent.shape)."
+
+	    @assert all(
+    		ch -> all(!isinside(ch.shape, v) for v in vertices),
+    		parent.children,
+	    ) "The child $sh overlaps a child of the parent shape."
+
+	    push!(parent.children, res)
+        else
+        end
+        return res
+    end
+end
+
+struct Voxel <: AbstractRegion
+    shape::GeometryPrimitive{3, Float64}
+    material::Material
+    parent::VoxelisedRegion
+    children::Vector{Nothing}
+    name::String
+
+    function Voxel(
+        sh::T,
+        mat::Material,
+        parent::VoxelisedRegion,
+        name::Union{Nothing,String} = nothing,
+        ntests = 1000,
+    ) where {T}
+        @assert mat[:Density] > 0.0
+        name = something(
+            name,
+            isnothing(parent) ? "Root" : "$(parent.name)[$(length(parent.children)+1)]",
+        )
+        res = new(sh, mat, parent, Nothing[], name) # Glen - nothing in children region 
+        if !isnothing(parent) 
 	    tolerance = (1e-4*sh.widths[3]) # Glen - This may not be applicable for all cases.
 	    vertices = [
     		sh.origin + Point(tolerance, tolerance, tolerance),
@@ -252,7 +298,7 @@ struct Region <: AbstractRegion
             name,
             isnothing(parent) ? "Root" : "$(parent.name)[$(length(parent.children)+1)]",
         )
-        res = new(sh, mat, parent, Region[], name)
+        res = new(sh, mat, parent, AbstractRegion[], name)
         if !isnothing(parent)
             @assert all(
                 _ -> isinside(parent.shape, random_point_inside(sh)),
@@ -287,6 +333,7 @@ function childmost_region(reg::Region, pos::AbstractArray{Float64})::Region
     return !isnothing(res) ? childmost_region(reg.children[res], pos) : reg
 end
 
+
 """
     take_step(p::T, reg::Region, 𝜆::Float64, 𝜃::Float64, 𝜑::Float64)::Tuple{T, Region, Bool} where { T<: Particle}
 
@@ -317,6 +364,7 @@ function take_step(
     end
     return (newP, nextReg, scatter)
 end
+
 
 """
 trajectory(eval::Function, p::T, reg::Region, scf::Function=transport; minE::Float64=50.0) where {T <: Particle}
