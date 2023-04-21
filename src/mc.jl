@@ -328,11 +328,23 @@ Base.show(io::IO, reg::Region) = print(
 
 Find the inner-most `Region` within `reg` containing the point `pos`.
 """
-function childmost_region(reg::Region, pos::AbstractArray{Float64})::Region
+function childmost_region(reg::Region, pos::AbstractArray{Float64})::AbstractRegion
     res = findfirst(ch -> isinside(ch.shape, pos), reg.children)
     return !isnothing(res) ? childmost_region(reg.children[res], pos) : reg
 end
-
+function childmost_region(reg::Union{VoxelisedRegion, Voxel}, pos::AbstractArray{Float64})::Union{VoxelisedRegion, Voxel}
+    res = findfirst(ch -> isinside(ch.shape, pos), reg.children)
+    return !isnothing(res) ? childmost_region(reg.children[res], pos) : reg
+end
+function childmost_region(reg::AbstractRegion, pos::AbstractArray{Float64})::AbstractRegion
+    if reg isa Region
+        return childmost_region(Region(reg), pos)
+    elseif reg isa VoxelisedRegion || reg isa Voxel
+        return childmost_region(Union{VoxelisedRegion, Voxel}(reg), pos)
+    else
+        error("Unsupported region type: ", typeof(reg))
+    end
+end
 
 """
     take_step(p::T, reg::Region, 𝜆::Float64, 𝜃::Float64, 𝜑::Float64)::Tuple{T, Region, Bool} where { T<: Particle}
@@ -351,7 +363,28 @@ function take_step(
     𝜑::Float64,
     ΔE::Float64,
     ϵ::Float64 = 1.0e-12,
-)::Tuple{T,Region,Bool} where {T<:Particle}
+)::Tuple{T,AbstractRegion,Bool} where {T<:Particle}
+    newP, nextReg = T(p, 𝜆, 𝜃, 𝜑, ΔE), reg
+    t = min(
+        intersection(reg.shape, newP), # Leave this Region?
+        (intersection(ch.shape, newP) for ch in reg.children)..., # Enter a new child Region?
+    )
+    scatter = t > 1.0
+    if !scatter # Enter new region
+        newP = T(p, (t + ϵ) * 𝜆, 𝜃, 𝜑, (t + ϵ) * ΔE)
+        nextReg = childmost_region(isnothing(reg.parent) ? reg : reg.parent, position(newP))
+    end
+    return (newP, nextReg, scatter)
+end
+function take_step(
+    p::T,
+    reg::Union{VoxelisedRegion, Voxel},
+    𝜆::Float64,
+    𝜃::Float64,
+    𝜑::Float64,
+    ΔE::Float64,
+    ϵ::Float64 = 1.0e-12,
+)::Tuple{T,AbstractRegion,Bool} where {T<:Particle} # Return type of take_step, particle type, region particle is in after step, scattered Boolean
     newP, nextReg = T(p, 𝜆, 𝜃, 𝜑, ΔE), reg
     t = min(
         intersection(reg.shape, newP), # Leave this Region?
