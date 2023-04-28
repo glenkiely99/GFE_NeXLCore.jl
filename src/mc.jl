@@ -193,11 +193,13 @@ struct VoxelisedRegion <: AbstractRegion
     parent::Union{Nothing, AbstractRegion}
     children::Vector{AbstractRegion}
     name::String
+    voxel_boundaries::Vector{NTuple{6, Float64}}
 
     function VoxelisedRegion(
         sh::T,
         mat::Material,
         parent::Union{Nothing,AbstractRegion},
+        num_voxels::Tuple{Int64, Int64, Int64},
         name::Union{Nothing,String} = nothing,
         ntests = 1000,
     ) where {T}
@@ -206,9 +208,32 @@ struct VoxelisedRegion <: AbstractRegion
             name,
             isnothing(parent) ? "Root" : "$(parent.name)[$(length(parent.children)+1)]",
         )
-        res = new(sh, mat, parent, AbstractRegion[], name)
+
+        x_voxel_size = sh.widths[1] / num_voxels[1]
+        y_voxel_size = sh.widths[2] / num_voxels[2]
+        z_voxel_size = sh.widths[3] / num_voxels[3]
+    
+        voxel_boundaries = Vector{NTuple{6, Float64}}(undef, num_voxels[1] * num_voxels[2] * num_voxels[3])
+        idx = 1
+        for k in 0:(num_voxels[3]-1)
+            for j in 0:(num_voxels[2]-1)
+                for i in 0:(num_voxels[1]-1)
+                    xmin = sh.origin[1] + i * x_voxel_size
+                    xmax = xmin + x_voxel_size
+                    ymin = sh.origin[2] + j * y_voxel_size
+                    ymax = ymin + y_voxel_size
+                    zmin = sh.origin[3] + k * z_voxel_size
+                    zmax = zmin + z_voxel_size
+                    voxel_boundaries[idx] = (xmin, xmax, ymin, ymax, zmin, zmax)
+                    idx += 1
+                end
+            end
+        end
+    
+        res = new(sh, mat, parent, AbstractRegion[], name, voxel_boundaries)
+
         if !isnothing(parent) # if a parent shape IS specified, since the ! is there
-	    tolerance = (1e-4*sh.widths[3]) # Glen - This may not be applicable for all cases.
+	    tolerance = eps(Float64) # Glen - This may not be applicable for all cases.
 	    vertices = [
     		sh.origin + Point(tolerance, tolerance, tolerance),
     		sh.origin + Point(0, 0, sh.widths[3]) - Point(0, 0, tolerance) + Point(tolerance, tolerance, 0),
@@ -254,7 +279,7 @@ struct Voxel <: AbstractRegion
         )
         res = new(sh, mat, parent, Nothing[], name) # Glen - nothing in children region 
         if !isnothing(parent) 
-	    tolerance = (1e-4*sh.widths[3]) # Glen - This may not be applicable for all cases.
+	    tolerance = eps(Float64) # Glen - This may not be applicable for all cases.
 	    vertices = [
     		sh.origin + Point(tolerance, tolerance, tolerance),
     		sh.origin + Point(0, 0, sh.widths[3]) - Point(0, 0, tolerance) + Point(tolerance, tolerance, 0),
@@ -332,11 +357,14 @@ function childmost_region(reg::Region, pos::AbstractArray{Float64})::AbstractReg
     res = findfirst(ch -> isinside(ch.shape, pos), reg.children)
     return !isnothing(res) ? childmost_region(reg.children[res], pos) : reg
 end
-function childmost_region(reg::Union{VoxelisedRegion, Voxel}, pos::AbstractArray{Float64})::Union{VoxelisedRegion, Voxel}
+function childmost_region(reg::Union{VoxelisedRegion, Voxel}, pos::AbstractArray{Float64})::Union{VoxelisedRegion, Voxel} # in a voxel, the voxelisedregion will be passed here
+    # take_step function determines if the voxel has a parent, if so then the parent is input here
+    # from this parent, the child region containing the position is chosen 
     res = findfirst(ch -> isinside(ch.shape, pos), reg.children)
-    return !isnothing(res) ? childmost_region(reg.children[res], pos) : reg
+    return !isnothing(res) ? childmost_region(reg.children[res], pos) : reg # res is NOT nothing? child found, pos contained in child.
+    # res = nothing? No child contains the position, region input is returned. 
 end
-function childmost_region(reg::AbstractRegion, pos::AbstractArray{Float64})::AbstractRegion
+function childmost_region(reg::AbstractRegion, pos::AbstractArray{Float64})::AbstractRegion # Glen - to deal with the recursive calling of this function 
     if reg isa Region
         return childmost_region(Region(reg), pos)
     elseif reg isa VoxelisedRegion || reg isa Voxel
@@ -345,6 +373,22 @@ function childmost_region(reg::AbstractRegion, pos::AbstractArray{Float64})::Abs
         error("Unsupported region type: ", typeof(reg))
     end
 end
+
+"""
+    find_voxel_by_position(voxel_boundaries, pos)
+
+Find the next Voxel containing the point `pos`.
+"""
+function find_voxel_by_position(voxel_boundaries, pos)
+    for (idx, bounds) in enumerate(voxel_boundaries)
+        xmin, xmax, ymin, ymax, zmin, zmax = bounds
+        if xmin <= pos[1] < xmax && ymin <= pos[2] < ymax && zmin <= pos[3] < zmax
+            return idx
+        end
+    end
+    return nothing
+end
+
 
 """
     take_step(p::T, reg::Region, 𝜆::Float64, 𝜃::Float64, 𝜑::Float64)::Tuple{T, Region, Bool} where { T<: Particle}
@@ -384,16 +428,31 @@ function take_step(
     𝜑::Float64,
     ΔE::Float64,
     ϵ::Float64 = 1.0e-12,
-)::Tuple{T,AbstractRegion,Bool} where {T<:Particle} # Return type of take_step, particle type, region particle is in after step, scattered Boolean
+)::Tuple{T,AbstractRegion,Bool} where {T<:Particle}
     newP, nextReg = T(p, 𝜆, 𝜃, 𝜑, ΔE), reg
     t = min(
-        intersection(reg.shape, newP), # Leave this Region?
-        (intersection(ch.shape, newP) for ch in reg.children)..., # Enter a new child Region?
+        intersection(reg.shape, newP),
+        (intersection(ch.shape, newP) for ch in reg.children)...,
     )
     scatter = t > 1.0
-    if !scatter # Enter new region
+    if !scatter
         newP = T(p, (t + ϵ) * 𝜆, 𝜃, 𝜑, (t + ϵ) * ΔE)
-        nextReg = childmost_region(isnothing(reg.parent) ? reg : reg.parent, position(newP))
+        if isa(nextReg, VoxelisedRegion)
+            voxel_idx = find_voxel_by_position(nextReg.voxel_boundaries, position(newP))
+            if !isnothing(voxel_idx)
+                nextReg = nextReg.children[voxel_idx] 
+            end
+
+        elseif isa(nextReg, Voxel)
+            voxel_idx = find_voxel_by_position(nextReg.parent.voxel_boundaries, position(newP))
+            if !isnothing(voxel_idx)
+                nextReg = nextReg.parent.children[voxel_idx] 
+            end
+        
+        else
+            nextReg = childmost_region(isnothing(reg.parent) ? reg : reg.parent, position(newP)) # may be problematic. What if the next region is not a voxel or voxelised?
+        end
+
     end
     return (newP, nextReg, scatter)
 end
