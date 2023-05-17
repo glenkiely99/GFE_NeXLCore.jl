@@ -193,7 +193,9 @@ struct VoxelisedRegion <: AbstractRegion
     parent::Union{Nothing, AbstractRegion}
     children::Vector{AbstractRegion}
     name::String
-    voxel_boundaries::Vector{NTuple{6, Float64}}
+    boundaries::NTuple{6, Float64}
+    voxel_sizes::NTuple{3, Float64}
+    num_voxels::Tuple{Int64, Int64, Int64}
 
     function VoxelisedRegion(
         sh::T,
@@ -212,25 +214,19 @@ struct VoxelisedRegion <: AbstractRegion
         x_voxel_size = sh.widths[1] / num_voxels[1]
         y_voxel_size = sh.widths[2] / num_voxels[2]
         z_voxel_size = sh.widths[3] / num_voxels[3]
+        voxel_sizes = NTuple{3, Float64}
+        voxel_sizes = (x_voxel_size, y_voxel_size, z_voxel_size)
+
+        boundaries = NTuple{6, Float64}
+        xmin = sh.origin[1]
+        xmax = sh.origin[1] + sh.widths[1]
+        ymin = sh.origin[2]
+        ymax = sh.origin[2] + sh.widths[2]
+        zmin = sh.origin[3]
+        zmax = sh.origin[3] + sh.widths[3]
+        boundaries = (xmin, xmax, ymin, ymax, zmin, zmax)
     
-        voxel_boundaries = Vector{NTuple{6, Float64}}(undef, num_voxels[1] * num_voxels[2] * num_voxels[3])
-        idx = 1
-        for k in 0:(num_voxels[3]-1)
-            for j in 0:(num_voxels[2]-1)
-                for i in 0:(num_voxels[1]-1)
-                    xmin = sh.origin[1] + i * x_voxel_size
-                    xmax = xmin + x_voxel_size
-                    ymin = sh.origin[2] + j * y_voxel_size
-                    ymax = ymin + y_voxel_size
-                    zmin = sh.origin[3] + k * z_voxel_size
-                    zmax = zmin + z_voxel_size
-                    voxel_boundaries[idx] = (xmin, xmax, ymin, ymax, zmin, zmax)
-                    idx += 1
-                end
-            end
-        end
-    
-        res = new(sh, mat, parent, AbstractRegion[], name, voxel_boundaries)
+        res = new(sh, mat, parent, AbstractRegion[], name, boundaries, voxel_sizes, num_voxels)
 
         if !isnothing(parent) # if a parent shape IS specified, since the ! is there
 	    tolerance = eps(Float64) # Glen - This may not be applicable for all cases.
@@ -379,14 +375,22 @@ end
 
 Find the next Voxel containing the point `pos`.
 """
-function find_voxel_by_position(voxel_boundaries, pos)
-    for (idx, bounds) in enumerate(voxel_boundaries)
-        xmin, xmax, ymin, ymax, zmin, zmax = bounds
-        if xmin <= pos[1] < xmax && ymin <= pos[2] < ymax && zmin <= pos[3] < zmax
-            return idx
-        end
+function find_voxel_by_position(boundaries, voxel_sizes, pos, num_voxels)
+    xidx = ceil(Int, (pos[1] - boundaries[1]) / voxel_sizes[1])
+    yidx = ceil(Int, (pos[2] - boundaries[3]) / voxel_sizes[2])
+    zidx = ceil(Int, (pos[3] - boundaries[5]) / voxel_sizes[3])
+    #println("positions:", pos[1], pos[2], pos[3])
+    #println("boundaries:", boundaries[1], boundaries[3], boundaries[5])
+    #println("voxel_sizes:", voxel_sizes)
+    #println("indices:", xidx, yidx, zidx)
+    voxel_index = ceil(Int, zidx + ((yidx-1)*num_voxels[3]) + ((xidx-1)*num_voxels[3]*num_voxels[2]))
+    #println("voxel_index:", voxel_index)
+    # It is important that voxels are created by incrementing z inside y inside x. 
+    if voxel_index <= (num_voxels[1]*num_voxels[2]*num_voxels[3]) &&  voxel_index > 0
+        return voxel_index
+    else
+        return nothing
     end
-    return nothing
 end
 
 
@@ -438,18 +442,19 @@ function take_step(
     if !scatter
         newP = T(p, (t + ϵ) * 𝜆, 𝜃, 𝜑, (t + ϵ) * ΔE)
         if isa(nextReg, VoxelisedRegion)
-            voxel_idx = find_voxel_by_position(nextReg.voxel_boundaries, position(newP))
-            if !isnothing(voxel_idx)
+            voxel_idx = find_voxel_by_position(nextReg.boundaries, nextReg.voxel_sizes, position(newP), nextReg.num_voxels)
+            if !isnothing(voxel_idx) 
                 nextReg = nextReg.children[voxel_idx] 
             end
 
-        elseif isa(nextReg, Voxel)
-            voxel_idx = find_voxel_by_position(nextReg.parent.voxel_boundaries, position(newP))
+        else
+            voxel_idx = find_voxel_by_position(nextReg.parent.boundaries, nextReg.parent.voxel_sizes, position(newP), nextReg.parent.num_voxels)
             if !isnothing(voxel_idx)
                 nextReg = nextReg.parent.children[voxel_idx] 
             end
+        end
         
-        else
+        if isnothing(voxel_idx)
             nextReg = childmost_region(isnothing(reg.parent) ? reg : reg.parent, position(newP)) # may be problematic. What if the next region is not a voxel or voxelised?
         end
 
@@ -474,7 +479,7 @@ Run a single particle trajectory from `p` to `minE` or until the particle exits 
 function trajectory(
     eval::Function,
     p::T,
-    reg::Region,
+    reg::AbstractRegion,
     scf::Function,
     terminate::Function,
 ) where {T<:Particle}
@@ -491,10 +496,10 @@ end
 function trajectory(
     eval::Function,
     p::T,
-    reg::Region,
+    reg::AbstractRegion,
     scf::Function = (t::T, mat::Material) -> transport(t, mat);
     minE::Float64 = 50.0,
 ) where {T<:Particle}
-    term(pc::T, _::Region) = pc.energy < minE
+    term(pc::T, _::AbstractRegion) = pc.energy < minE
     trajectory(eval, p, reg, scf, term)
 end
