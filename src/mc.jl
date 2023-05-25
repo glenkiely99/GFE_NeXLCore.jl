@@ -189,22 +189,23 @@ abstract type AbstractRegion end
 
 struct VoxelisedRegion <: AbstractRegion
     shape::GeometryPrimitive{3, Float64}
-    material::Material
     parent::Union{Nothing, AbstractRegion}
     children::Vector{AbstractRegion}
+    voxels::Array{Voxel, 3}
     name::String
     boundaries::NTuple{6, Float64}
     voxel_sizes::NTuple{3, Float64}
     num_voxels::Tuple{Int64, Int64, Int64}
 
     function VoxelisedRegion(
-        sh::T,
-        mat::Material,
+        sh::RectangularShape,
+        mat_func::Material,
         parent::Union{Nothing,AbstractRegion},
         num_voxels::Tuple{Int64, Int64, Int64},
+        nodes::NTuple{3, Vector{Float64, 3}}
         name::Union{Nothing,String} = nothing,
         ntests = 1000,
-    ) where {T}
+    )
         @assert mat[:Density] > 0.0
         name = something(
             name,
@@ -218,6 +219,11 @@ struct VoxelisedRegion <: AbstractRegion
         voxel_sizes = (x_voxel_size, y_voxel_size, z_voxel_size)
 
         boundaries = NTuple{6, Float64}
+        nodes = (
+            sh.origin[1] .+ [i * x_voxel_size for i in 0:num_voxels[1]],
+            sh.origin[2] .+ [i * x_voxel_size for i in 0:num_voxels[2]],
+            sh.origin[3] .+ [i * x_voxel_size for i in 0:num_voxels[3]]
+        )
         xmin = sh.origin[1]
         xmax = sh.origin[1] + sh.widths[1]
         ymin = sh.origin[2]
@@ -225,8 +231,18 @@ struct VoxelisedRegion <: AbstractRegion
         zmin = sh.origin[3]
         zmax = sh.origin[3] + sh.widths[3]
         boundaries = (xmin, xmax, ymin, ymax, zmin, zmax)
-    
-        res = new(sh, mat, parent, AbstractRegion[], name, boundaries, voxel_sizes, num_voxels)
+
+        voxels = Array{Voxel}(undef, num_voxels)
+        res = new(sh, mat, parent, AbstractRegion[], voxels, name, boundaries, voxel_sizes, num_voxels)
+
+        for i in 1:num_voxels[1]
+            for i in 1:num_voxels[2]
+                for i in 1:num_voxels[3]
+                    pos = Position(nodes[1][i] + nodes[1][i+1], nodes[2][j] + nodes[2][j+1], nodes[3][k] + nodes[3][k+1]) .* 0.5
+                    voxels[i, j, k] = Voxel((i, j, k), mat_func(pos), res, name)
+                end
+            end
+        end
 
         if !isnothing(parent) # if a parent shape IS specified, since the ! is there
 	    tolerance = eps(Float64) # Glen - This may not be applicable for all cases.
@@ -254,50 +270,40 @@ struct VoxelisedRegion <: AbstractRegion
     end
 end
 
+struct VoxelShape
+    index::NTuple
+    parent::VoxelisedRegion
+end
+
 struct Voxel <: AbstractRegion
-    shape::GeometryPrimitive{3, Float64}
+    shape::VoxelShape
     material::Material
     parent::VoxelisedRegion
     children::Vector{Nothing}
     name::String
 
     function Voxel(
-        sh::T,
+        index::NTuple,
         mat::Material,
         parent::VoxelisedRegion,
-        name::Union{Nothing,String} = nothing,
-        ntests = 1000,
+        name::String = "",
     ) where {T}
         @assert mat[:Density] > 0.0
-        name = something(
-            name,
-            isnothing(parent) ? "Root" : "$(parent.name)[$(length(parent.children)+1)]",
-        )
-        res = new(sh, mat, parent, Nothing[], name) # Glen - nothing in children region 
-        if !isnothing(parent) 
-	    tolerance = eps(Float64) # Glen - This may not be applicable for all cases.
-	    vertices = [
-    		sh.origin + Point(tolerance, tolerance, tolerance),
-    		sh.origin + Point(0, 0, sh.widths[3]) - Point(0, 0, tolerance) + Point(tolerance, tolerance, 0),
-    		sh.origin + Point(0, sh.widths[2], 0) - Point(0, tolerance, 0) + Point(tolerance, 0, tolerance),
-    		sh.origin + Point(0, sh.widths[2], sh.widths[3]) - Point(0, tolerance, tolerance) + Point(tolerance, 0, 0),
-    		sh.origin + Point(sh.widths[1], 0, 0) - Point(tolerance, 0, 0) + Point(0, tolerance, tolerance),
-    		sh.origin + Point(sh.widths[1], 0, sh.widths[3]) - Point(tolerance, 0, tolerance) + Point(0, tolerance, 0),
-    		sh.origin + Point(sh.widths[1], sh.widths[2], 0) - Point(tolerance, tolerance, 0) + Point(0, 0, tolerance),
-    		sh.origin + Point(sh.widths[1], sh.widths[2], sh.widths[3]) - Point(tolerance, tolerance, tolerance),
-	    ]
-	    @assert all(isinside(parent.shape, v) for v in vertices) "The child $sh is not fully contained within the parent $(parent.shape)."
-
-	    @assert all(
-    		ch -> all(!isinside(ch.shape, v) for v in vertices),
-    		parent.children,
-	    ) "The child $sh overlaps a child of the parent shape."
-
-	    push!(parent.children, res)
-        else
-        end
-        return res
+        name = name * "$index"
+        return new(VoxelShape(index, parent), mat, parent, Nothing[], name) # Glen - nothing in children region
     end
+end
+
+function isinside(vx::VoxelShape, pos::AbstractArray{Float64})
+    #ToDo
+end
+
+function intersection(
+    vx::VoxelShape,
+    pos0::AbstractArray{Float64},
+    pos1::AbstractArray{Float64},
+)::Float64
+    #ToDo
 end
 
 struct Region <: AbstractRegion
@@ -424,6 +430,7 @@ function take_step(
     end
     return (newP, nextReg, scatter)
 end
+
 function take_step(
     p::T,
     reg::Union{VoxelisedRegion, Voxel},

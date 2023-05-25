@@ -105,6 +105,22 @@ struct Trincavelli1997 <: NeXLBremsstrahlung end
 struct Castellano2004a <: NeXLBremsstrahlung end
 struct Castellano2004b <: NeXLBremsstrahlung end
 
+"""
+    bremsstrahlung(::Type{<:NeXLBremsstrahlung}, e::AbstractFloat, e0::AbstractFloat, elm::Element) 
+
+Calcualtes the Bremsstrahlung (continuum) at an energy `e` for an incident electron of `e0` in the element `elm`.
+
+The supported models include:  Kramers1923, Lifshin1974, Reed1975, Smith1975, Small1987, Trincavelli1997, 
+Castellano2004a, Castellano2004b
+
+Evaluating the models I find that Castellano2004a, Trincavelli1997 work well with the Riveros1993 matrix correction
+algorithm and the AP33Tabulation window.  Smith1975 works surprisigly well with the CitZAF matrix correction model.
+Other old models based on Si(Li) data tend to not do too well at lower energies.  This shouldn't surprise anyone
+as these models were often based on data from Be window detectors.  Castellano2004a and Trincavelli1997 were
+designed around the Riveros1993 matrix correction model and don't perform well using CitZAF.
+
+My current recommendation is either Castellano2004a or Riveros1993.
+"""
 bremsstrahlung(::Type{Kramers1923}, e::AbstractFloat, e0::AbstractFloat, elm::Element) =
     e < e0 ? z(elm) * (e0 - e) / e : 0.0
 
@@ -157,15 +173,17 @@ bremsstrahlung(::Type{Trincavelli1997}, e::AbstractFloat, e0::AbstractFloat, elm
     ) : 0.0
 
 
-bremsstrahlung(::Type{Castellano2004a}, e::AbstractFloat, e0::AbstractFloat, elm::Element) =
+function bremsstrahlung(::Type{Castellano2004a}, e::AbstractFloat, e0::AbstractFloat, elm::Element)
+    ek, e0k, zz = 0.001 * e, 0.001 * e0, Float64(z(elm))
     e < e0 ?
-    (sqrt(z(elm)) * (e0 - e) / e) *
+    (sqrt(zz) * (e0 - e) / e) *
     (
-        -73.90 - 1.2446 * (1.0e-3 * e) +
-        36.502 * log(z(elm)) +
-        (148.5 * (1.0e-3 * e0)^0.1239) / z(elm)
+        -73.90 - 1.2446 * ek +
+        36.502 * log(zz) +
+        (148.5 * e0k^0.1239) / zz
     ) * #
-    (1.0 + (-0.006624 + 0.0002906 * (1.0e-3 * e0)) * z(elm) / (1.0e-3 * e)) : 0.0
+    (1.0 + (-0.006624 + 0.0002906 * e0k) * zz / ek) : 0.0
+end
 
 function bremsstrahlung(
     ::Type{Castellano2004b},

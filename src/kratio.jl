@@ -6,6 +6,12 @@ using Statistics
 
 """
 The members in common between KRatio and KRatios
+
+
+    > element(kr)
+    > xrays(kr)
+    > standard(kr)
+    > elms(KRatioBase[...])
 """
 abstract type KRatioBase 
     # element::Element
@@ -22,9 +28,11 @@ Find the first KRatio or KRatios in which the .xrays field contains the cxr::Cha
 """
 Base.findfirst(krs::AbstractVector{<:KRatioBase}, cxr::CharXRay) =
     krs[findfirst(kr -> cxr in kr.xrays, krs)]
+
 element(kr::KRatioBase) = kr.element
 xrays(krs::KRatioBase) = krs.xrays
 standard(krs::KRatioBase) = krs.standard
+
 """
     elms(krs::Vector{KRatio})::Set{Element}
 
@@ -38,9 +46,14 @@ function elms(krs::Vector{<:KRatioBase})::Set{Element}
     return res
 end
 
-
 """
-    KRatio
+    KRatio(
+        xray::CharXRay,
+        unkProps::Dict{Symbol,<:Any},
+        stdProps::Dict{Symbol,<:Any},
+        standard::Material,
+        kratio::AbstractFloat,
+    )
 
 The k-ratio is the ratio of two similar intensity measurements - one on 
 a material of unknown composition and one on a standard with known 
@@ -62,6 +75,20 @@ measurements may be associated with many `CharXRay` that are similar in energy.
 k-ratios are always relative to another material.  Usually the composition of this
 `Material` is well-known.  However, when a k-ratio is restandardized, it is possible
 for the intermediate material to be less well-known.
+
+Methods:
+
+    > element(kr)
+    > xrays(kr)
+    > standard(kr)
+    > elms(KRatioBase[...])
+    > NeXLUncertainties.value(kr::KRatio)
+    > NeXLUncertainties.σ(kr::KRatio)
+    > nonnegk(kr::KRatio)
+    > Statistics.mean(krs::AbstractVector{KRatio})::UncertainValue
+    > Base.getindex(krs::AbstractVector{KRatio}, cxr::CharXRay)
+    > strip(krs::AbstractVector{KRatio}, els::Element...)::Vector{KRatio}
+    > asa(::Type{DataFrame}, krs::AbstractVector{KRatio})::DataFrame
 """
 struct KRatio <: KRatioBase
     element::Element
@@ -110,6 +137,13 @@ struct KRatio <: KRatioBase
             convert(UncertainValue, kratio),
         )
     end
+    KRatio(
+        xray::CharXRay,
+        unkProps::Dict{Symbol,<:Any},
+        stdProps::Dict{Symbol,<:Any},
+        standard::Material,
+        kratio::AbstractFloat,
+    ) = KRatio( CharXRay[ xray ], unkProps, stdProps, standard, kratio)
 end
 
 NeXLUncertainties.value(kr::KRatio) = value(kr.kratio)
@@ -153,6 +187,22 @@ end
 `KRatios` represents the hyper-spectral equivalent of the KRatio type.  Each pixel in the `KRatios` object
 must be characterized by the same unknown and standard properties, the same X-ray lines and the other
 properties.
+
+
+Methods:
+
+    > Base.getindex(krs::KRatios, idx::Int...)
+    > Base.getindex(krs::KRatios, ci::CartesianIndex)
+    > Base.size(krs::KRatios, [idx::Int])
+    > Base.CartesianIndices(krs::KRatios)
+    > normalizek(krs::AbstractVector{<:KRatios}; norm::Float32=1.0f)::Vector{KRatios}
+    > normalizek(krs::AbstractVector{KRatio}; norm::Float32=1.0f)::Vector{KRatio}
+    > brightest(krs::Union{KRatios, KRatio})
+    > colorize(krs::AbstractVector{<:KRatios}, red::Element, green::Element, blue::Element, normalize=:All[|:Each])
+    > colorize(krs::AbstractVector{<:KRatios}, elms::AbstractVector{Element}, normalize=:All)
+    > Base.getindex(krs::AbstractVector{<:KRatios}, elm::Element) # Gray scale image
+    > Base.getindex(krs::AbstractVector{<:KRatios}, red::Element, green::Element)  # Red-green image
+    > Base.getindex(krs::AbstractVector{<:KRatios}, red::Element, green::Element, blue::Element) # RGB image
 """
 struct KRatios{T} <: KRatioBase where {T <: AbstractFloat}
     element::Element
@@ -260,8 +310,8 @@ end
 
 Returns a new KRatios (referencing same basic data as krs) but with a single CharXRay in the `lines` field.
 """
-brightest(krs::KRatios) = KRatios([brightest(krs.xrays)], krs.unkProps, krs.stdProps, krs.standard, krs.kratios )
-brightest(krs::KRatio) = KRatio([brightest(krs.xrays)], krs.unkProps, krs.stdProps, krs.standard, krs.kratio )
+brightest(krs::KRatios)::KRatios = KRatios([brightest(krs.xrays)], krs.unkProps, krs.stdProps, krs.standard, krs.kratios )
+brightest(krs::KRatio)::KRatio = KRatio([brightest(krs.xrays)], krs.unkProps, krs.stdProps, krs.standard, krs.kratio )
 
 """
     colorize(krs::AbstractVector{<:KRatios}, red::Element, green::Element, blue::Element, normalize=:All[|:Each])

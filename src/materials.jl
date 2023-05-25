@@ -1,4 +1,5 @@
 using Pkg.Artifacts
+using CSV
 
 const srm470_k412 = parse(Material, "(0.4535±0.0020)*SiO2+(0.1933±0.0020)*MgO+(0.1525±0.0020)*CaO+(0.0927±0.0020)*Al2O3+(0.0996±0.0020)*FeO", 
     name="SRM-470 K412", density = 3.45, description="https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nbsspecialpublication260-74.pdf",
@@ -263,6 +264,21 @@ const mengason_mineral_mount2 = (
     mmm_copper,
 )
 
+"""
+    compositionlibrary()::Dict{String, Material}
+
+Load the internal compositon library.
+"""
+function compositionlibrary()::Dict{String,Material}
+    csvf = CSV.File(joinpath(@__DIR__, "..", "data", "composition.csv"))
+    elms = map(cs->parse(Element,repr(cs)[2:end]), Tables.columnnames(csvf)[3:96])
+    return Dict(map(Tables.rows(csvf)) do row
+        name, density, elmc = row[1], row[2], zip(elms, map(i->row[i], 3:96))
+        data = Dict{Element,Float64}(filter(a -> (!ismissing(a[2])) && (a[2] > 0.0), collect(elmc)))
+        name => material(name, data; density = density)
+    end)
+end
+
 function loadmineraldata(parseit::Bool = false)::DataFrame
     minpath = datadep"RUFFDatabase"
     res = CSV.File(joinpath(minpath, "RRUFF_Export_20191025_022204.csv")) |> DataFrame
@@ -397,4 +413,30 @@ function parsedsmithsoniandata()::Dict{String,Material}
         res[r[:Name]] = mat
     end
     return res
+end
+
+"""
+    wikidata_minerals()::Dict{String, Material}
+
+Mineral data based on a WikiData SPARQL query of minerals.
+Only those minerals which represented distinct (uniquely defined) compositions
+are included.  Replicas were removed.
+
+Also includes `:Class`, `:Formula` and `:Description` properties.
+"""
+function wikidata_minerals()::Dict{String, Material}
+    df = CSV.read(joinpath(@__DIR__, "..", "data", "minerals.csv"), DataFrame)
+    res = map(Tables.rows(df)) do r
+        mat = missing
+        try
+            sc = replace(r.subclass, ';'=>':')
+            props = Dict{Symbol, Any}( :Class => "Mineral; $sc", :Description=> r.description )
+            mat = parse(Material, r.formula, name=r.name, properties = props)
+        catch err
+            @warn "Failed to parse $(r.formula) : $err"
+        end
+        r.name => mat
+    end
+    res = filter!(r->!ismissing(r.second), res)
+    Dict(res)
 end

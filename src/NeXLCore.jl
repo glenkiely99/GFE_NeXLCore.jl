@@ -60,6 +60,7 @@ include("element.jl") # Element data from PeriodicTable.jl
 include("shell.jl") # Atomic shell methods
 include("transition.jl") # Atomic transition methods
 include("characteristic.jl") # Characteristic X-ray methods
+include("continuum.jl") # Continuum X-ray methods
 include("parse.jl") # Parse elements, shells, transitions from strings
 include("algorithm.jl") # Default implementation of algorithms
 
@@ -148,6 +149,7 @@ export labeled # Transform a data item into a Dict of (Label, value)
 export Material # Material struct
 # export Base.keys # Element keys into Material
 export name # Material name
+export properties # Material, Spectrum or Other properties
 export compare # Compare compositions as a DataFrame
 export elms # Use elms instead of elements since elements taken by PeriodicTable
 export nonneg # Returns the mass fraction as a Float64 >= 0.0
@@ -220,6 +222,9 @@ include("electron.jl")
 export λₑ # Wavelength of an electron
 export kₑ # Wave number of an electron
 export mₑ # mass of an electron in MeV
+export vₑ # electron velocity in cm/s as a function of energy
+export electrons_per_second # Current as electrons/second
+export γₑ # Relativistic γ for electrons as function of electron velocity 
 
 include("misc.jl")
 export Poehn1985 # A jump ratio model
@@ -278,6 +283,7 @@ export requiredbutmissing # Lists missing properties
 include("materials.jl")
 export loadsmithsoniandata, parsedsmithsoniandata
 export loadmineraldata
+export wikidata_minerals
 export srm470_k411, srm470_k412
 
 include("palettes.jl")
@@ -307,6 +313,9 @@ export isstandard # Does a k-ratio have the necessary properties to be a standar
 export standardize # Apply similar standards to a KRatio or KRatios
 
 include("materialdb.jl")
+
+include("mats.jl")
+export Materials
 
 export disp
 
