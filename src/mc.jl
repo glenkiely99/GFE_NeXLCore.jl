@@ -26,7 +26,7 @@ If the ray from `pos0` towards `pos2` does not intersect `r` then this function 
 const RectangularShape = Rect3{Float64}
 
 isinside(rr::RectangularShape, pos::AbstractArray{Float64}) =
-    all(pos .> minimum(rr)) && all(pos .< maximum(rr))
+    all(pos .> minimum(rr)) && all(pos .< maximum(rr)) # write for voxels i, i + 1
 
 function intersection(
     rr::RectangularShape,
@@ -187,65 +187,118 @@ A `Region` combines a geometric primative and a `Material` (with `:Density` prop
 
 abstract type AbstractRegion end
 
+struct VoxelShape
+    index::NTuple
+    parent::AbstractRegion
+end
+
+struct Voxel <: AbstractRegion
+    shape::VoxelShape
+    material::Material
+    parent::AbstractRegion
+    children::Vector{Nothing}
+    name::String
+
+    function Voxel(
+        index::NTuple,
+        mat::Material,
+        parent::AbstractRegion,
+        name::String = "",
+    ) 
+        @assert mat[:Density] > 0.0
+        name = name * "$index"
+        shape = VoxelShape(index, parent)
+        return new(shape, mat, parent, Vector{Nothing}(), name) # Glen - nothing in children region
+    end
+end
+
+function rect(vx::VoxelShape)
+    i, j, k = vx.index
+    RectangularShape([vx.parent.nodes[i, j, k]], vx.parent.voxel_sizes)
+end
+
+function isinside(vx::VoxelShape, pos::AbstractArray{Float64})
+    all(pos .> vx.parent.nodes[i][j][k]) && all(pos .< vx.parent.nodes[i+1][j+1][k+1]) # write for voxels i, i + 1
+end
+
+function intersection( # how to make this more efficient? 
+    vx::VoxelShape,
+    pos1::AbstractArray{Float64},
+    pos2::AbstractArray{Float64},
+)::Float64
+    _between(a, b, c) = (a > b) && (a < c)
+    t = Inf64
+    i, j, k = vx.index
+    corner1, corner2 = vx.parent.nodes[i,j,k], vx.parent.nodes[i+1,j+1,k+1] # is this correct?
+    for i in eachindex(pos1)
+        j, k = i % 3 + 1, (i + 1) % 3 + 1
+        if pos2[i] != pos1[i]
+            u = (corner1[i] - pos1[i]) / (pos2[i] - pos1[i])
+            if (u > 0.0) &&
+               (u <= t) && #
+               _between(pos1[j] + u * (pos2[j] - pos1[j]), corner1[j], corner2[j]) && # 
+               _between(pos1[k] + u * (pos2[k] - pos1[k]), corner1[k], corner2[k])
+                t = u
+            end
+            u = (corner2[i] - pos1[i]) / (pos2[i] - pos1[i])
+            if (u > 0.0) &&
+               (u <= t) && #
+               _between(pos1[j] + u * (pos2[j] - pos1[j]), corner1[j], corner2[j]) && # 
+               _between(pos1[k] + u * (pos2[k] - pos1[k]), corner1[k], corner2[k])
+                t = u
+            end
+        end
+    end
+    return t
+end
+
 struct VoxelisedRegion <: AbstractRegion
     shape::GeometryPrimitive{3, Float64}
     parent::Union{Nothing, AbstractRegion}
     children::Vector{AbstractRegion}
+    material::Material
     voxels::Array{Voxel, 3}
+    nodes::Array{NTuple{3, Float64}, 3}
     name::String
-    boundaries::NTuple{6, Float64}
     voxel_sizes::NTuple{3, Float64}
     num_voxels::Tuple{Int64, Int64, Int64}
 
     function VoxelisedRegion(
         sh::RectangularShape,
-        mat_func::Material,
+        mat::Material,
+        mat_func::Function,
         parent::Union{Nothing,AbstractRegion},
         num_voxels::Tuple{Int64, Int64, Int64},
-        nodes::NTuple{3, Vector{Float64, 3}}
         name::Union{Nothing,String} = nothing,
-        ntests = 1000,
     )
-        @assert mat[:Density] > 0.0
         name = something(
             name,
             isnothing(parent) ? "Root" : "$(parent.name)[$(length(parent.children)+1)]",
         )
 
-        x_voxel_size = sh.widths[1] / num_voxels[1]
-        y_voxel_size = sh.widths[2] / num_voxels[2]
-        z_voxel_size = sh.widths[3] / num_voxels[3]
-        voxel_sizes = NTuple{3, Float64}
-        voxel_sizes = (x_voxel_size, y_voxel_size, z_voxel_size)
+        voxel_sizes = (sh.widths[1] / num_voxels[1], sh.widths[2] / num_voxels[2], sh.widths[3] / num_voxels[3])
 
-        boundaries = NTuple{6, Float64}
-        nodes = (
-            sh.origin[1] .+ [i * x_voxel_size for i in 0:num_voxels[1]],
-            sh.origin[2] .+ [i * x_voxel_size for i in 0:num_voxels[2]],
-            sh.origin[3] .+ [i * x_voxel_size for i in 0:num_voxels[3]]
-        )
-        xmin = sh.origin[1]
-        xmax = sh.origin[1] + sh.widths[1]
-        ymin = sh.origin[2]
-        ymax = sh.origin[2] + sh.widths[2]
-        zmin = sh.origin[3]
-        zmax = sh.origin[3] + sh.widths[3]
-        boundaries = (xmin, xmax, ymin, ymax, zmin, zmax)
+        nodes = [(sh.origin[1] + i * voxel_sizes[1], 
+        sh.origin[2] + j * voxel_sizes[2], 
+        sh.origin[3] + k * voxel_sizes[3] ) for i in 0:num_voxels[1], j in 0:num_voxels[2], k in 0:num_voxels[3]] 
 
-        voxels = Array{Voxel}(undef, num_voxels)
-        res = new(sh, mat, parent, AbstractRegion[], voxels, name, boundaries, voxel_sizes, num_voxels)
+        voxels = Array{Voxel}(undef, num_voxels[1], num_voxels[2], num_voxels[3])
+        res = new(sh, parent, Vector{AbstractRegion}(), mat, voxels, nodes, name, voxel_sizes, num_voxels)
 
         for i in 1:num_voxels[1]
-            for i in 1:num_voxels[2]
-                for i in 1:num_voxels[3]
-                    pos = Position(nodes[1][i] + nodes[1][i+1], nodes[2][j] + nodes[2][j+1], nodes[3][k] + nodes[3][k+1]) .* 0.5
+            for j in 1:num_voxels[2]
+                for k in 1:num_voxels[3]
+                    pos = Position((nodes[i, j, k][1] + nodes[i + 1, j + 1, k + 1][1],
+                    nodes[i, j, k][2] + nodes[i + 1, j + 1, k + 1][2],
+                    nodes[i, j, k][3] + nodes[i + 1, j + 1, k + 1][3])) .* 0.5
+
                     voxels[i, j, k] = Voxel((i, j, k), mat_func(pos), res, name)
                 end
             end
         end
 
-        if !isnothing(parent) # if a parent shape IS specified, since the ! is there
-	    tolerance = eps(Float64) # Glen - This may not be applicable for all cases.
+        if !isnothing(parent)
+	    tolerance = eps(Float64)
 	    vertices = [
     		sh.origin + Point(tolerance, tolerance, tolerance),
     		sh.origin + Point(0, 0, sh.widths[3]) - Point(0, 0, tolerance) + Point(tolerance, tolerance, 0),
@@ -269,42 +322,7 @@ struct VoxelisedRegion <: AbstractRegion
         return res
     end
 end
-
-struct VoxelShape
-    index::NTuple
-    parent::VoxelisedRegion
-end
-
-struct Voxel <: AbstractRegion
-    shape::VoxelShape
-    material::Material
-    parent::VoxelisedRegion
-    children::Vector{Nothing}
-    name::String
-
-    function Voxel(
-        index::NTuple,
-        mat::Material,
-        parent::VoxelisedRegion,
-        name::String = "",
-    ) where {T}
-        @assert mat[:Density] > 0.0
-        name = name * "$index"
-        return new(VoxelShape(index, parent), mat, parent, Nothing[], name) # Glen - nothing in children region
-    end
-end
-
-function isinside(vx::VoxelShape, pos::AbstractArray{Float64})
-    #ToDo
-end
-
-function intersection(
-    vx::VoxelShape,
-    pos0::AbstractArray{Float64},
-    pos1::AbstractArray{Float64},
-)::Float64
-    #ToDo
-end
+    
 
 struct Region <: AbstractRegion
     shape::GeometryPrimitive{3,Float64}
@@ -381,24 +399,13 @@ end
 
 Find the next Voxel containing the point `pos`.
 """
-function find_voxel_by_position(boundaries, voxel_sizes, pos, num_voxels)
-    xidx = ceil(Int, (pos[1] - boundaries[1]) / voxel_sizes[1])
-    yidx = ceil(Int, (pos[2] - boundaries[3]) / voxel_sizes[2])
-    zidx = ceil(Int, (pos[3] - boundaries[5]) / voxel_sizes[3])
-    #println("positions:", pos[1], pos[2], pos[3])
-    #println("boundaries:", boundaries[1], boundaries[3], boundaries[5])
-    #println("voxel_sizes:", voxel_sizes)
-    #println("indices:", xidx, yidx, zidx)
-    voxel_index = ceil(Int, zidx + ((yidx-1)*num_voxels[3]) + ((xidx-1)*num_voxels[3]*num_voxels[2]))
-    #println("voxel_index:", voxel_index)
-    # It is important that voxels are created by incrementing z inside y inside x. 
-    if voxel_index <= (num_voxels[1]*num_voxels[2]*num_voxels[3]) &&  voxel_index > 0
-        return voxel_index
-    else
-        return nothing
-    end
-end
 
+function find_voxel_by_position(nodes, pos) 
+    xidx = findfirst(x -> pos[1] > x, [nodes[i, 1, 1][1] for i in 1:size(nodes, 1)]) 
+    yidx = findfirst(y -> pos[2] > y, [nodes[1, j, 1][2] for j in 1:size(nodes, 2)]) 
+    zidx = findfirst(z -> pos[3] > z, [nodes[1, 1, k][3] for k in 1:size(nodes, 3)]) 
+    return (xidx, yidx, zidx) 
+end
 
 """
     take_step(p::T, reg::Region, 𝜆::Float64, 𝜃::Float64, 𝜑::Float64)::Tuple{T, Region, Bool} where { T<: Particle}
@@ -449,19 +456,19 @@ function take_step(
     if !scatter
         newP = T(p, (t + ϵ) * 𝜆, 𝜃, 𝜑, (t + ϵ) * ΔE)
         if isa(nextReg, VoxelisedRegion)
-            voxel_idx = find_voxel_by_position(nextReg.boundaries, nextReg.voxel_sizes, position(newP), nextReg.num_voxels)
-            if !isnothing(voxel_idx) 
-                nextReg = nextReg.children[voxel_idx] 
-            end
+            voxel_idxs = find_voxel_by_position(nextReg.nodes, position(newP))
+            if !isnothing(voxel_idxs[1]) && !isnothing(voxel_idxs[2]) && !isnothing(voxel_idxs[3])
+                nextReg = nextReg.voxels[voxel_idxs[1],voxel_idxs[2],voxel_idxs[3]] 
+            end 
 
-        else
-            voxel_idx = find_voxel_by_position(nextReg.parent.boundaries, nextReg.parent.voxel_sizes, position(newP), nextReg.parent.num_voxels)
-            if !isnothing(voxel_idx)
-                nextReg = nextReg.parent.children[voxel_idx] 
+        elseif isa(nextReg, Voxel)
+            voxel_idxs = find_voxel_by_position(nextReg.parent.nodes, position(newP))
+            if !isnothing(voxel_idxs[1]) && !isnothing(voxel_idxs[2]) && !isnothing(voxel_idxs[3])
+                nextReg = nextReg.parent.voxels[voxel_idxs[1],voxel_idxs[2],voxel_idxs[3]] 
             end
         end
         
-        if isnothing(voxel_idx)
+        if isnothing(voxel_idxs)
             nextReg = childmost_region(isnothing(reg.parent) ? reg : reg.parent, position(newP)) # may be problematic. What if the next region is not a voxel or voxelised?
         end
 
