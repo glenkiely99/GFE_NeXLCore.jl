@@ -401,10 +401,13 @@ Find the next Voxel containing the point `pos`.
 """
 
 function find_voxel_by_position(nodes, pos) 
-    xidx = findfirst(x -> pos[1] > x, [nodes[i, 1, 1][1] for i in 1:size(nodes, 1)]) 
+    xidx = findfirst(x -> pos[1] > x, [nodes[i, 1, 1][1] for i in 1:size(nodes, 1)])
     yidx = findfirst(y -> pos[2] > y, [nodes[1, j, 1][2] for j in 1:size(nodes, 2)]) 
     zidx = findfirst(z -> pos[3] > z, [nodes[1, 1, k][3] for k in 1:size(nodes, 3)]) 
     return (xidx, yidx, zidx) 
+end
+function find_voxel_by_position(vr::VoxelisedRegion, pos) 
+    return ceil.(Int, (pos - vr.shape.origin) ./ vr.voxel_sizes)
 end
 
 """
@@ -440,7 +443,7 @@ end
 
 function take_step(
     p::T,
-    reg::Union{VoxelisedRegion, Voxel},
+    reg::Union{Voxel},
     𝜆::Float64,
     𝜃::Float64,
     𝜑::Float64,
@@ -455,25 +458,35 @@ function take_step(
     scatter = t > 1.0
     if !scatter
         newP = T(p, (t + ϵ) * 𝜆, 𝜃, 𝜑, (t + ϵ) * ΔE)
-        if isa(nextReg, VoxelisedRegion)
-            voxel_idxs = find_voxel_by_position(nextReg.nodes, position(newP))
-            if !isnothing(voxel_idxs[1]) && !isnothing(voxel_idxs[2]) && !isnothing(voxel_idxs[3])
-                nextReg = nextReg.voxels[voxel_idxs[1],voxel_idxs[2],voxel_idxs[3]] 
-            end 
-
-        elseif isa(nextReg, Voxel)
-            voxel_idxs = find_voxel_by_position(nextReg.parent.nodes, position(newP))
-            if !isnothing(voxel_idxs[1]) && !isnothing(voxel_idxs[2]) && !isnothing(voxel_idxs[3])
-                nextReg = nextReg.parent.voxels[voxel_idxs[1],voxel_idxs[2],voxel_idxs[3]] 
+        if isa(nextReg, Voxel)
+            voxel_idxs = find_voxel_by_position(nextReg.parent, position(newP))
+            if all(1 .<= voxel_idxs .<= nextReg.parent.num_voxels)
+                nextReg = nextReg.parent.voxels[voxel_idxs...] 
+            else
+                vr = nextReg.parent
+                nextReg = childmost_region(isnothing(vr.parent) ? nothing : vr.parent, position(newP))
             end
         end
-        
-        if isnothing(voxel_idxs)
-            nextReg = childmost_region(isnothing(reg.parent) ? reg : reg.parent, position(newP)) # may be problematic. What if the next region is not a voxel or voxelised?
-        end
-
     end
     return (newP, nextReg, scatter)
+end
+
+function take_step(
+    p::T,
+    reg::Union{VoxelisedRegion},
+    𝜆::Float64,
+    𝜃::Float64,
+    𝜑::Float64,
+    ΔE::Float64,
+    ϵ::Float64 = 1.0e-12,
+)::Tuple{T,AbstractRegion,Bool} where {T<:Particle}
+    @assert isinside(reg.shape, position(p)) position(p), minimum(reg.shape), maximum(reg.shape)
+    voxel_idxs = find_voxel_by_position(reg, position(p))
+    if any(1 .> voxel_idxs .|| voxel_idxs .> reg.num_voxels)
+        error()
+    end
+    regv = reg.voxels[voxel_idxs...]
+    take_step(p, regv, 𝜆, 𝜃, 𝜑, ΔE, ϵ)
 end
 
 
