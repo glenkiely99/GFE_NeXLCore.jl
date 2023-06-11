@@ -32,6 +32,14 @@ dEds(
     mip::Type{<:NeXLMeanIonizationPotential} = Berger1982,
 ) = (-785.0e8 * ρ * z(elm)) / (a(elm) * e) * log(1.166e / J(mip, elm))
 
+dEds(
+    ::Type{BetheContinuous},
+    e::Float64,
+    elm::Vector{Element},
+    ρ::Vector{Float64},
+    mip::Type{<:NeXLMeanIonizationPotential} = Berger1982,
+) = (-785.0e8 .* ρ .* z.(elm)) / (a.(elm) .* e) .* log(1.166e ./ J.(mip, elm))
+
 
 function dEds(
     ::Type{JoyLuo},
@@ -45,6 +53,21 @@ function dEds(
     j = J(mip, z(elm))
     jp = j / (1.0 + k * j / e)
     return ((-785.0e8 * ρ * z(elm)) / (a(elm) * e)) * log(1.166 * e / jp)
+end
+
+
+function dEds(
+    ::Type{JoyLuoContinuous},
+    e::Float64,
+    elm::Vector{Element},
+    ρ::Vector{Float64},
+    mip::Type{<:NeXLMeanIonizationPotential} = Berger1982,
+)
+    # Zero allocation
+    k = 0.731 .+ 0.0688 .* log.(10.0, z.(elm))
+    j = J.(mip, z.(elm))
+    jp = j ./ (1.0 .+ k .* j ./ e)
+    return ((-785.0e8 .* ρ .* z.(elm)) ./ (a.(elm) .* e)) .* log.(1.166 .* e ./ jp)
 end
 
 function dEds(

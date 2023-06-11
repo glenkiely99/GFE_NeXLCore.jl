@@ -168,6 +168,30 @@ function transport(
     (𝜆′, θ′, ϕ′) = rand(ecx, mat, pc.energy)
     return (𝜆′, θ′, ϕ′, 𝜆′ * dEds(bethe, pc.energy, mat))
 end
+function transport(
+    pc::Electron,
+    mat::Vector{Material},
+    ecx::Type{<:ElasticScatteringCrossSection} = Liljequist1989,
+    bethe::Type{<:BetheEnergyLoss} = JoyLuoContinuous,
+)::NTuple{4,Float64}
+    energyval = pc.energy
+    mfps = []
+    stopping_vals = []
+    (𝜆′, θ′, ϕ′) = rand(ecx, mat[1], energyval)
+    mfps.push(𝜆′)
+    for m in mat[2:end]
+        (𝜆′, -, -) = rand(ecx, m, energyval)
+        mfps.push(𝜆′)
+        current_stop = dEds(bethe, energyval, m)
+        stopping_vals.push(current_stop)  # Calculate energy loss for the current energy and material
+        energyval -= mfp * current_stop 
+        push!(results, (𝜆′, θ′, ϕ′, 𝜆′ * eloss))
+    end
+    avg_mfp = sum(mfps)/len(mfps) # Glen - average now, use weighted average though
+    (𝜆′, θ′, ϕ′) = rand(ecx, m, pc.energy)
+    return (avg_mfp, θ′, ϕ′, energyval)
+    return results
+end
 
 """
     pathlength(el::Particle)
@@ -514,7 +538,11 @@ function trajectory(
     θ, ϕ = 0.0, 0.0
     while (!terminate(pc, reg)) && isinside(reg.shape, position(pc))
         prevr = nextr
-        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material)
+        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material) # Glen - should this work with a material vector
+        λ_vec = [λ * sin(θₙ) * cos(ϕₙ), λ * sin(θₙ) * sin(ϕₙ), λ * cos(θₙ)]
+        if position(p) + λ_vec 
+
+        end
         (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
         (θ, ϕ) = scatter ? (θₙ, ϕₙ) : (0.0, 0.0)
         eval(pc, prevr)
@@ -524,6 +552,39 @@ function trajectory(
     eval::Function,
     p::T,
     reg::AbstractRegion,
+    scf::Function = (t::T, mat::Material) -> transport(t, mat);
+    minE::Float64 = 50.0,
+) where {T<:Particle}
+    term(pc::T, _::AbstractRegion) = pc.energy < minE
+    trajectory(eval, p, reg, scf, term)
+end
+
+function trajectory(
+    eval::Function,
+    p::T,
+    reg::Voxel, # works onlz for voxels
+    scf::Function,
+    terminate::Function,
+) where {T<:Particle}
+    current_idxs = find_voxel_by_position(reg.parent, position(p))
+    (pc, nextr) = (p, reg.parent.voxels[current_idxs])
+    θ, ϕ = 0.0, 0.0
+    while (!terminate(pc, reg)) && isinside(reg.shape, position(pc))
+        prevr = nextr 
+        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material)
+        λ_vec = [λ * sin(θₙ) * cos(ϕₙ), λ * sin(θₙ) * sin(ϕₙ), λ * cos(θₙ)]
+        new_position = Position(position(p) + λ_vec)
+        new_idxs = find_voxel_by_position(reg.parent, new_position)
+
+        (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
+        (θ, ϕ) = scatter ? (θₙ, ϕₙ) : (0.0, 0.0)
+        eval(pc, prevr)
+    end
+end
+function trajectory(
+    eval::Function,
+    p::T,
+    reg::Voxel,
     scf::Function = (t::T, mat::Material) -> transport(t, mat);
     minE::Float64 = 50.0,
 ) where {T<:Particle}

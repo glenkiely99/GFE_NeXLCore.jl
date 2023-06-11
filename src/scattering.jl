@@ -12,6 +12,7 @@ const a₀ = ustrip(BohrRadius |> u"cm") # 0.529 Å
 Classic formula for the atomic screening radius in cm
 """
 Rₐ(elm::Element) = a₀ * z(elm)^-0.333333333333
+Rₐ(elm::Vector{Element}) = a₀ .* z(elm)^-0.333333333333
 
 """
 Algorithms implementing the elastic scattering cross-section
@@ -56,7 +57,10 @@ struct Browning1991 <: ScreenedRutherfordType end
 function ξ(::Type{<:ScreenedRutherfordType}, elm::Element, E::Float64)::Float64
     Rₑ, mc² = ustrip((PlanckConstant * SpeedOfLightInVacuum * RydbergConstant) |> u"eV"), ustrip(ElectronMass * SpeedOfLightInVacuum^2 |> u"eV")
     return 0.5 * π * a₀^2 * (4.0 * z(elm) * ((E + mc²) / (E + 2.0 * mc²)) * (Rₑ / E))^2 # As corrected in Liljequist1989
-
+end 
+function ξ(::Type{<:ScreenedRutherfordType}, elm::Vector{Element}, E::Vector{Float64})::Vector{Float64}
+    Rₑ, mc² = ustrip((PlanckConstant * SpeedOfLightInVacuum * RydbergConstant) |> u"eV"), ustrip(ElectronMass * SpeedOfLightInVacuum^2 |> u"eV")
+    return 0.5 * π * a₀^2 * (4.0 .* z.(elm) .* ((E .+ mc²) ./ (E .+ 2.0 .* mc²)) .* (Rₑ ./ E)).^2 # As corrected in Liljequist1989
 end
 
 """
@@ -65,6 +69,10 @@ end
 Screening factor.
 """
 ϵ(::Type{<:ScreenedRutherfordType}, elm::Element, E::Float64) = 2.0 * (kₑ(E) * Rₐ(elm))^2
+ϵ(::Type{<:ScreenedRutherfordType}, elm::Vector{Element}, E::Vector{Float64}) = 2.0 * (kₑ(E) .* Rₐ(elm))^2
+#kₑ just gives e wavenumber ß need to input vector of Es to this 
+# Glen - need to implement this continuously
+
 
 # A spline interpolation based on Liljequist Table III 
 const LiljequistCorrection = begin
@@ -130,7 +138,15 @@ function σₜᵣ(::Type{ScreenedRutherford}, elm::Element, E::Float64)
 end
 function σₜᵣ(::Type{Liljequist1989}, elm::Element, E::Float64)
     return σₜᵣ(ScreenedRutherford, elm, E) / LiljequistCorrection[z(elm)](E)
+end 
+
+function σₜᵣ(::Type{ScreenedRutherford}, elm::Vector{Element}, E::Vector{Float64})
+    ϵv = ϵ(ScreenedRutherford, elm, E)
+    return ξ(ScreenedRutherford, elm, E) .* (log(2.0 .* ϵv .+ 1) .- 2.0 .* ϵv / (2.0 .* ϵv .+ 1.0))
 end
+function σₜᵣ(::Type{Liljequist1989}, elm::Vector{Element}, E::Vector{Float64})
+    return σₜᵣ(ScreenedRutherford, elm, E) ./ LiljequistCorrection[z(elm)](E)
+end 
 
 """
     σₜ(::Type{ScreenedRutherford}, elm::Element, E::Float64)
@@ -146,7 +162,19 @@ function σₜ(::Type{ScreenedRutherford}, elm::Element, E::Float64)
 end
 function σₜ(::Type{Liljequist1989}, elm::Element, E::Float64)
     return σₜ(ScreenedRutherford, elm, E) / LiljequistCorrection[z(elm)](E)
+end 
+
+# Vectorised form of everything
+function σₜ(::Type{ScreenedRutherford},  elm::Vector{Element}, E::Vector{Float64})
+    ϵv = ϵ(ScreenedRutherford, elm, E)
+    return ξ(ScreenedRutherford, elm, E) .* (2.0 .* ϵv^2 ./ (2.0 .* ϵv .+ 1.0))
 end
+function σₜ(::Type{Liljequist1989},  elm::Vector{Element}, E::Vector{Float64})
+    return σₜ(ScreenedRutherford, elm, E) ./ LiljequistCorrection[z(elm)](E)
+end
+
+
+
 function σₜ(::Type{Browning1991}, elm::Element, E::Float64)
     e = 0.001 * E
     u = log10(8.0 * e * z(elm)^-1.33)
@@ -171,6 +199,14 @@ function δσδΩ(::Type{ScreenedRutherford}, θ::Float64, elm::Element, E::Floa
 end
 function δσδΩ(::Type{Liljequist1989}, θ::Float64, elm::Element, E::Float64)::Float64
     return σ(ScreenedRutherford, θ, elm, E) / LiljequistCorrection[z(elm)](E)
+end
+
+function δσδΩ(::Type{ScreenedRutherford}, θ::Float64, elm::Vector{Element}, E::Vector{Float64})::Vector{Float64}
+    return ξ(ScreenedRutherford, elm, E) *
+           (1.0 .- cos(θ) .+ ϵ(ScreenedRutherford, elm, E)^-1)^-2
+end
+function δσδΩ(::Type{Liljequist1989}, θ::Float64, elm::Vector{Element}, E::Vector{Float64})::Vector{Float64}
+    return σ(ScreenedRutherford, θ, elm, E) ./ LiljequistCorrection[z(elm)](E)
 end
 
 """
@@ -210,6 +246,23 @@ function Base.rand(
     @assert elm′ != elements[119] "Are there any elements in $mat?  Is the density ($(mat[:Density])) too low?"
     return (λ′, rand(ty, elm′, E), 2.0 * π * rand())
 end
+
+function Base.rand(
+    ty::Type{<:ScreenedRutherfordType},
+    mat::Vector{Material},
+    E::Vector{Float64}, # Glen - how to calculate energy at second material
+    #weights::Vector{Float64} # should be computed via E, rho, pathlength in voxel
+)::NTuple{3,Float64}
+    @assert length(mat) == length(E) "Lengths of Material and E equal."
+    elm′, λ′ = elements[119], 1.0e308
+    for (i, z) in enumerate(keys(mat))
+        l = -λ(ty, mat, z, E) * log(rand())
+        (elm′, λ′) = l < λ′ ? (z, l) : (elm′, λ′)
+    end
+    @assert elm′ != elements[119] "Are there any elements in $mat?  Is the density ($(mat[:Density])) too low?"
+    return (λ′, rand(ty, elm′, E), 2.0 * π * rand())
+end
+
 
 """
     λₜᵣ(ty::Type{<:ElasticScatteringCrossSection}, θ::Float64, elm::Element, E::Float64)::Float64
