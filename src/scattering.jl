@@ -215,10 +215,10 @@ end
 The mean free path.  The mean distance between elastic scattering events. 
 """
 function λ(ty::Type{<:ScreenedRutherfordType}, elm::Element, E::Float64, N::Float64)
-    return (σₜ(ty, elm, E) * N)^-1
+    return (σₜ(ty, elm, E) * N)^-1 
 end
 function λ(ty::Type{<:ScreenedRutherfordType}, mat::Material, elm::Element, E::Float64)
-    return λ(ty, elm, E, atoms_per_cm³(mat, elm))
+    return λ(ty, elm, E, atoms_per_cm³(mat, elm)) 
 end
 
 
@@ -235,7 +235,7 @@ end
 """
 function Base.rand(
     ty::Type{<:ScreenedRutherfordType},
-    mat::Material,
+    mat::Material, #Function
     E::Float64,
 )::NTuple{3,Float64}
     elm′, λ′ = elements[119], 1.0e308
@@ -245,20 +245,6 @@ function Base.rand(
     end
     @assert elm′ != elements[119] "Are there any elements in $mat?  Is the density ($(mat[:Density])) too low?"
     return (λ′, rand(ty, elm′, E), 2.0 * π * rand())
-end
-function Base.rand(
-    ty::Type{<:ScreenedRutherfordType},
-    mat::Material,
-    E::Float64,
-    randnum::Float64,
-)::NTuple{3,Float64}
-    elm′, λ′ = elements[119], 1.0e308
-    for (i, z) in enumerate(keys(mat))
-        l = -λ(ty, mat, z, E) * log(randnum)
-        (elm′, λ′) = l < λ′ ? (z, l) : (elm′, λ′)
-    end
-    @assert elm′ != elements[119] "Are there any elements in $mat?  Is the density ($(mat[:Density])) too low?"
-    return (λ′, rand(ty, elm′, E), 2.0 * π * randnum)
 end
 
 
