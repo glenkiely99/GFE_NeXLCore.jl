@@ -152,6 +152,58 @@ previous(el::Particle) = el.previous
 energy(el::Particle) = el.energy
 
 """
+    discreteregions()::NTuple{4, Vector{Int}}
+
+The function defining the regions visited by an electron in the continuous voxel model. 
+
+Returns the indices of the regions visited, when given a value for `λ` (the mean path length), which extends past the voxel
+boundary, or boundaries, along with the percentage of the trajectory contained within the regions.
+"""
+function discreteregions(
+    reg::Voxel,
+    λ::Float64,
+    θ::Float64,
+    ϕ::Float64,
+    current_idxs::NTuple{3,Int},
+    pos::Position,
+)::Dict{Tuple{Int, Int, Int}, Float64}
+    path_vec = [λ * sin(θ) * cos(ϕ), λ * sin(θ) * sin(ϕ), λ * cos(θ)]
+    
+    nodevals = reg.parent.nodes
+    vox_dims = reg.parent.voxel_sizes
+    vox = current_idxs
+
+    step = [sign(dir) for dir in path_vec] # pos or negative path along x,y,z
+    tMax = [((nodevals[vox[i] + max(step[i], 0), i] - pos[i]) / path_vec[i]) for i in 1:3] # adds 1 if travelling positive
+    tDelta = [vox_dims[i] / abs(path_vec[i]) for i in 1:3] # when line crosses into next voxel along x,y,z
+
+
+    vox_fracs = Dict{Tuple{Int, Int, Int}, Float64}()
+
+    while true
+        #fraction of the total path length within current voxel
+        t_next = minimum(tMax)
+        if t_next > 1
+            t_next = 1
+        end
+
+        vox_fracs[Tuple(vox)] = get(vox_fracs, Tuple(vox), 0) + t_next / norm(path_vec) #fraction of total path length in this voxel
+    
+        # end of the path, break
+        if t_next == 1
+            break
+        end
+    
+        #or move to the next voxel along the path
+        dim = argmin(tMax) # dimension of closest voxel
+        tMax[dim] += tDelta[dim] #increment the tMax value in the dimension found above by tDelta[dim], the fraction of the total path length required to cross a voxel in that dimension. 
+        vox[dim] += step[dim] # increment voxel index in this dimension, either + or - 1
+    end
+
+    return vox_fracs
+end
+
+"""
     transport(pc::Electron, mat::Material, ecx=Liljequist1989, bethe=JoyLuo)::NTuple{4, Float64}
 
 The default function defining elastic scattering and energy loss for an Electron.
@@ -165,32 +217,50 @@ function transport(
     ecx::Type{<:ElasticScatteringCrossSection} = Liljequist1989,
     bethe::Type{<:BetheEnergyLoss} = JoyLuo,
 )::NTuple{4,Float64}
-    (𝜆′, θ′, ϕ′) = rand(ecx, mat, pc.energy)
+    randnum = rand()
+    (𝜆′, θ′, ϕ′) = rand(ecx, mat, pc.energy, randnum) 
     return (𝜆′, θ′, ϕ′, 𝜆′ * dEds(bethe, pc.energy, mat))
 end
+
+
 function transport(
     pc::Electron,
-    mat::Vector{Material},
+    reg::Voxel,
+    current_idxs::NTuple{3,Int},
     ecx::Type{<:ElasticScatteringCrossSection} = Liljequist1989,
     bethe::Type{<:BetheEnergyLoss} = JoyLuoContinuous,
 )::NTuple{4,Float64}
     energyval = pc.energy
+    energyloss = 0
     mfps = []
     stopping_vals = []
-    (𝜆′, θ′, ϕ′) = rand(ecx, mat[1], energyval)
+    randnum = rand() # need the same random number for each subsequent material
+    (𝜆′, θ′, ϕ′) = rand(ecx, reg.material, energyval, randnum) 
     mfps.push(𝜆′)
-    for m in mat[2:end]
-        (𝜆′, -, -) = rand(ecx, m, energyval)
+    stopping_vals.push(dEds(bethe, pc.energy, reg.material))
+
+    vox_fracs = discreteregions(reg, 𝜆′, θ′, ϕ′, current_idxs, position(pc))
+    # here, must determine which voxels will be reached by this mfp, using discreteregions function
+    # the percentage of the mfp inside the first voxel must be multiplied by the dEds for that mat
+    # this is used to calculate the energy of the electron in the next voxel or mat, which should
+    # be used to determine the mfp of the electron in this material and subsequent voxels too
+    energyloss += 𝜆′ * vox_fracs[Tuple(current_idxs)] * dEds(bethe, pc.energy, reg.material)
+    energyval -= energyloss
+    already_traversed = mfps[1] * vox_fracs[Tuple(current_idxs)]
+    for voxel_idx in vox_fracs[2:end]
+        m = reg.parent.voxels[voxel_idx].material
+        (𝜆′, -, -) = rand(ecx, m, energyval, randnum)
         mfps.push(𝜆′)
-        current_stop = dEds(bethe, energyval, m)
-        stopping_vals.push(current_stop)  # Calculate energy loss for the current energy and material
-        energyval -= mfp * current_stop 
-        push!(results, (𝜆′, θ′, ϕ′, 𝜆′ * eloss))
+        # using fraction of traj in 1st assumption
+        dE = 𝜆′ * vox_fracs[Tuple(voxel_idx)] * dEds(bethe, energyval, m)
+        energyloss += dE
+        energyval -= dE
+        weights = [vox_fracs[Tuple(voxel_idx)] for voxel_idx in vox_fracs]
+        current_mfp = already_traversed + ((sum(weights[1:length(mfps)] .* mfps) / sum(weights[1:length(mfps)])) - already_traversed) #mfp currently with weighted voxels
+        vox_fracs = discreteregions(reg, current_mfp, θ′, ϕ′, current_idxs, position(pc))
+        already_traversed += 𝜆′ * vox_fracs[Tuple(voxel_idx)]
     end
-    avg_mfp = sum(mfps)/len(mfps) # Glen - average now, use weighted average though
-    (𝜆′, θ′, ϕ′) = rand(ecx, m, pc.energy)
-    return (avg_mfp, θ′, ϕ′, energyval)
-    return results
+    return (current_mfp, θ′, ϕ′, energyloss)
 end
 
 """
@@ -424,11 +494,28 @@ end
 Find the next Voxel containing the point `pos`.
 """
 
+#function find_voxel_by_position(nodes, pos) 
+#    xidx = findfirst(x -> pos[1] > x, [nodes[i, 1, 1][1] for i in 1:size(nodes, 1)])
+#    yidx = findfirst(y -> pos[2] > y, [nodes[1, j, 1][2] for j in 1:size(nodes, 2)]) 
+#    zidx = findfirst(z -> pos[3] > z, [nodes[1, 1, k][3] for k in 1:size(nodes, 3)]) 
+#    return (xidx, yidx, zidx) 
+#end
 function find_voxel_by_position(nodes, pos) 
-    xidx = findfirst(x -> pos[1] > x, [nodes[i, 1, 1][1] for i in 1:size(nodes, 1)])
-    yidx = findfirst(y -> pos[2] > y, [nodes[1, j, 1][2] for j in 1:size(nodes, 2)]) 
-    zidx = findfirst(z -> pos[3] > z, [nodes[1, 1, k][3] for k in 1:size(nodes, 3)]) 
-    return (xidx, yidx, zidx) 
+    x_nodes = [nodes[i, 1, 1][1] for i in 1:size(nodes, 1)]
+    y_nodes = [nodes[1, j, 1][2] for j in 1:size(nodes, 2)]
+    z_nodes = [nodes[1, 1, k][3] for k in 1:size(nodes, 3)]
+
+    xidx = findlast(x -> pos[1] >= x, x_nodes)
+    yidx = findlast(y -> pos[2] >= y, y_nodes)
+    zidx = findlast(z -> pos[3] >= z, z_nodes)
+
+    # Check if the position is beyond the last node
+    if xidx == nothing || yidx == nothing || zidx == nothing || 
+       xidx == length(x_nodes) || yidx == length(y_nodes) || zidx == length(z_nodes)
+        return nothing
+    else
+        return (xidx, yidx, zidx) 
+    end
 end
 function find_voxel_by_position(vr::VoxelisedRegion, pos) 
     return ceil.(Int, (pos - vr.shape.origin) ./ vr.voxel_sizes)
@@ -538,11 +625,7 @@ function trajectory(
     θ, ϕ = 0.0, 0.0
     while (!terminate(pc, reg)) && isinside(reg.shape, position(pc))
         prevr = nextr
-        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material) # Glen - should this work with a material vector
-        λ_vec = [λ * sin(θₙ) * cos(ϕₙ), λ * sin(θₙ) * sin(ϕₙ), λ * cos(θₙ)]
-        if position(p) + λ_vec 
-
-        end
+        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material) # Glen - should this work with a material vector?
         (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
         (θ, ϕ) = scatter ? (θₙ, ϕₙ) : (0.0, 0.0)
         eval(pc, prevr)
@@ -562,17 +645,16 @@ end
 function trajectory(
     eval::Function,
     p::T,
-    reg::Voxel, # works onlz for voxels
+    reg::Voxel, # works only for voxels
     scf::Function,
     terminate::Function,
 ) where {T<:Particle}
     current_idxs = find_voxel_by_position(reg.parent, position(p))
     (pc, nextr) = (p, reg.parent.voxels[current_idxs])
-    θ, ϕ = 0.0, 0.0
-    while (!terminate(pc, reg)) && isinside(reg.shape, position(pc))
+    θ, ϕ = 0.0, 0.0 # this should be okay
+    while (!terminate(pc, reg)) && isinside(reg.parent.shape, position(pc)) # inside voxelised reg
         prevr = nextr 
-        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material)
-        λ_vec = [λ * sin(θₙ) * cos(ϕₙ), λ * sin(θₙ) * sin(ϕₙ), λ * cos(θₙ)]
+        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr, current_idxs) # scf is the transport function - takes 1 material as the input 
         new_position = Position(position(p) + λ_vec)
         new_idxs = find_voxel_by_position(reg.parent, new_position)
 
@@ -585,7 +667,7 @@ function trajectory(
     eval::Function,
     p::T,
     reg::Voxel,
-    scf::Function = (t::T, mat::Material) -> transport(t, mat);
+    scf::Function = (t::T, mat::Material) -> transport(t, mat); # Material vector or voxel details
     minE::Float64 = 50.0,
 ) where {T<:Particle}
     term(pc::T, _::AbstractRegion) = pc.energy < minE

@@ -246,21 +246,19 @@ function Base.rand(
     @assert elm′ != elements[119] "Are there any elements in $mat?  Is the density ($(mat[:Density])) too low?"
     return (λ′, rand(ty, elm′, E), 2.0 * π * rand())
 end
-
 function Base.rand(
     ty::Type{<:ScreenedRutherfordType},
-    mat::Vector{Material},
-    E::Vector{Float64}, # Glen - how to calculate energy at second material
-    #weights::Vector{Float64} # should be computed via E, rho, pathlength in voxel
+    mat::Material,
+    E::Float64,
+    randnum::Float64,
 )::NTuple{3,Float64}
-    @assert length(mat) == length(E) "Lengths of Material and E equal."
     elm′, λ′ = elements[119], 1.0e308
     for (i, z) in enumerate(keys(mat))
-        l = -λ(ty, mat, z, E) * log(rand())
+        l = -λ(ty, mat, z, E) * log(randnum)
         (elm′, λ′) = l < λ′ ? (z, l) : (elm′, λ′)
     end
     @assert elm′ != elements[119] "Are there any elements in $mat?  Is the density ($(mat[:Density])) too low?"
-    return (λ′, rand(ty, elm′, E), 2.0 * π * rand())
+    return (λ′, rand(ty, elm′, E), 2.0 * π * randnum)
 end
 
 
