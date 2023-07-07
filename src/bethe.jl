@@ -56,17 +56,6 @@ function dEds(
         dEds(ty, e, el, ρ, mip) * mat[el]
     end
 end
-function dEds(
-    ty::Type{<:BetheEnergyLoss},
-    e::Float64,
-    mat::Function,
-    mip::Type{<:NeXLMeanIonizationPotential} = Berger1982,
-)
-    ρ = density(mat)
-    return sum(keys(mat)) do el
-        dEds(ty, e, el, ρ, mip) * mat[el]
-    end
-end
 
 """
     range(::Type{BetheEnergyLoss}, mat::Material, e0::Float64, inclDensity = true)

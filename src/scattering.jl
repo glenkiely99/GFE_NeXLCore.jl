@@ -1,5 +1,6 @@
 using Dierckx
 using QuadGK
+using HCubature
 
 """
     a₀ : Bohr radius (in cm)
@@ -271,7 +272,7 @@ function Base.rand(
         (elm′, λ′) = l < λ′ ? (z, l) : (elm′, λ′)
     end
     for i in 1:num_iterations
-        integral, error = quadgk(x -> -λ(ty, mat(x), E), pos, position(T(p, λ′, 𝜃, 𝜑, 0)))
+        integral, error = hcubature(x -> -λ(ty, mat(x), E), coordinates(pos), coordinates(position(T(p, λ′, 𝜃, 𝜑, 0))))
         λ = (integral / λ′) * log(r)
         λ′ = λ
     end
