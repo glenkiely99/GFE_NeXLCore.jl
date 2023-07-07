@@ -221,6 +221,16 @@ function transport(
     return (𝜆′, θ′, ϕ′, 𝜆′ * dEds(bethe, pc.energy, mat))
 end
 
+function transport(
+    pc::Electron,
+    mat::Function, #Function - elements fixed with mass fractions changing
+    ecx::Type{<:ElasticScatteringCrossSection} = Liljequist1989,
+    bethe::Type{<:BetheEnergyLoss} = JoyLuo,
+)::NTuple{4,Float64}
+    (𝜆′, θ′, ϕ′) = rand(ecx, mat, pc.energy, position(pc)) 
+    return (𝜆′, θ′, ϕ′, 𝜆′ * dEds(bethe, pc.energy, mat))
+end
+
 
 # function transport(
 #     pc::Electron,

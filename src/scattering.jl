@@ -1,4 +1,5 @@
 using Dierckx
+using QuadGK
 
 """
     a₀ : Bohr radius (in cm)
@@ -220,6 +221,13 @@ end
 function λ(ty::Type{<:ScreenedRutherfordType}, mat::Material, elm::Element, E::Float64)
     return λ(ty, elm, E, atoms_per_cm³(mat, elm)) 
 end
+function λ(ty::Type{<:ScreenedRutherfordType}, mat::Material, E::Float64)
+    for (i, z) in enumerate(keys(mat))
+        l = -λ(ty, mat, z, E) * log(r)
+        (elm′, λ′) = l < λ′ ? (z, l) : (elm′, λ′)
+    end
+    return λ′
+end
 
 
 """
@@ -245,6 +253,30 @@ function Base.rand(
     end
     @assert elm′ != elements[119] "Are there any elements in $mat?  Is the density ($(mat[:Density])) too low?"
     return (λ′, rand(ty, elm′, E), 2.0 * π * rand())
+end
+function Base.rand(
+    ty::Type{<:ScreenedRutherfordType},
+    mat::Function, #Material is a function
+    E::Float64,
+    pos::Position, #Position
+    num_iterations::Int
+    )::NTuple{3,Float64}
+    elm′, λ′ = elements[119], 1.0e308
+    mat_at_pos = mat(pos)
+    r = rand()
+    thet = rand(ty, elm′, E)
+    phi = 2.0 * π * rand()
+    for (i, z) in enumerate(keys(mat_at_pos))
+        l = -λ(ty, mat, z, E) * log(r)
+        (elm′, λ′) = l < λ′ ? (z, l) : (elm′, λ′)
+    end
+    for i in 1:num_iterations
+        integral, error = quadgk(x -> -λ(ty, mat(x), E), pos, end_pos)
+        λ = (integral / λ′) * log(r)
+        λ′ = λ
+    end
+    @assert elm′ != elements[119] "Are there any elements in $mat_at_pos?  Is the density ($(mat_at_pos[:Density])) too low?"
+    return (λ′, thet, phi)
 end
 
 
