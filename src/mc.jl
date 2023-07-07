@@ -647,13 +647,40 @@ function trajectory(
     eval::Function,
     p::T,
     reg::AbstractRegion,
-    scf::Function = (t::T, mat::Material) -> transport(t, mat, 4); # 4 is number of integration iterations 
+    scf::Function = (t::T, mat::Material) -> transport(t, mat); 
     minE::Float64 = 50.0,
 ) where {T<:Particle}
     term(pc::T, _::AbstractRegion) = pc.energy < minE
     trajectory(eval, p, reg, scf, term)
 end
 
+function trajectory(
+    eval::Function,
+    p::T,
+    reg::AbstractRegion,
+    scf::Function,
+    terminate::Function,
+) where {T<:Particle}
+    (pc, nextr) = (p, childmost_region(reg, position(p)))
+    θ, ϕ = 0.0, 0.0
+    while (!terminate(pc, reg)) && isinside(reg.shape, position(pc))
+        prevr = nextr
+        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material) # Glen - should this work with a material vector?
+        (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
+        (θ, ϕ) = scatter ? (θₙ, ϕₙ) : (0.0, 0.0)
+        eval(pc, prevr)
+    end
+end
+function trajectory(
+    eval::Function,
+    p::T,
+    reg::AbstractRegion,
+    scf::Function = (t::T, mat::Function) -> transport(t, mat, 4); # 4 is number of integration iterations 
+    minE::Float64 = 50.0,
+) where {T<:Particle}
+    term(pc::T, _::AbstractRegion) = pc.energy < minE
+    trajectory(eval, p, reg, scf, term)
+end
 
 # function trajectory(
 #     eval::Function,
