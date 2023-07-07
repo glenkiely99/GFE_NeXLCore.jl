@@ -205,11 +205,12 @@ boundary, or boundaries, along with the percentage of the trajectory contained w
 
 """
     transport(pc::Electron, mat::Material, ecx=Liljequist1989, bethe=JoyLuo)::NTuple{4, Float64}
+    transport(pc::Electron, mat::Material, num_iterations::Int, ecx=Liljequist1989, bethe=JoyLuo)::NTuple{4, Float64}
 
 The default function defining elastic scattering and energy loss for an Electron.
 
 Returns ( `λ`, `θ`, `ϕ`, `ΔE`) where `λ` is the mean path length, `θ` is the elastic scatter angle, `ϕ` is the azimuthal elastic scatter
-angle and `ΔE` is the energy loss for transport over the distance `λ`.
+angle and `ΔE` is the energy loss for transport over the distance `λ`. 'Num_iterations' is the number of desired iterations for the integrations.
 """
 function transport(
     pc::Electron,
@@ -223,12 +224,19 @@ end
 
 function transport(
     pc::Electron,
-    mat::Function, #Function - elements fixed with mass fractions changing
+    mat::Function,
+    num_iterations::Int,
     ecx::Type{<:ElasticScatteringCrossSection} = Liljequist1989,
     bethe::Type{<:BetheEnergyLoss} = JoyLuo,
 )::NTuple{4,Float64}
-    (𝜆′, θ′, ϕ′) = rand(ecx, mat, pc.energy, position(pc)) 
-    return (𝜆′, θ′, ϕ′, 𝜆′ * dEds(bethe, pc.energy, mat))
+    (𝜆′, θ′, ϕ′) = rand(ecx, mat, pc.energy, position(pc), num_iterations) 
+    stopval = dEds(bethe, pc.energy, mat(position(pc)))
+    for i in 1:num_iterations
+        integral, error = quadgk(x -> dEds(bethe, pc.energy, mat(x)), position(pc), position(T(p, λ′, θ′, ϕ′, 0)))
+        stopping_val = integral / stopval 
+        stopval = stopping_val
+    end
+    return (𝜆′, θ′, ϕ′, 𝜆′ * stopval)
 end
 
 
@@ -639,7 +647,7 @@ function trajectory(
     eval::Function,
     p::T,
     reg::AbstractRegion,
-    scf::Function = (t::T, mat::Material) -> transport(t, mat);
+    scf::Function = (t::T, mat::Material) -> transport(t, mat, 4); # 4 is number of integration iterations 
     minE::Float64 = 50.0,
 ) where {T<:Particle}
     term(pc::T, _::AbstractRegion) = pc.energy < minE

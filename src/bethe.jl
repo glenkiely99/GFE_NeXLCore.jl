@@ -45,12 +45,21 @@ function dEds(
     jp = j / (1.0 + k * j / e)
     return ((-785.0e8 * ρ * z(elm)) / (a(elm) * e)) * log(1.166 * e / jp)
 end
-
-
 function dEds(
     ty::Type{<:BetheEnergyLoss},
     e::Float64,
     mat::Material,
+    mip::Type{<:NeXLMeanIonizationPotential} = Berger1982,
+)
+    ρ = density(mat)
+    return sum(keys(mat)) do el
+        dEds(ty, e, el, ρ, mip) * mat[el]
+    end
+end
+function dEds(
+    ty::Type{<:BetheEnergyLoss},
+    e::Float64,
+    mat::Function,
     mip::Type{<:NeXLMeanIonizationPotential} = Berger1982,
 )
     ρ = density(mat)

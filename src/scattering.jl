@@ -221,7 +221,7 @@ end
 function λ(ty::Type{<:ScreenedRutherfordType}, mat::Material, elm::Element, E::Float64)
     return λ(ty, elm, E, atoms_per_cm³(mat, elm)) 
 end
-function λ(ty::Type{<:ScreenedRutherfordType}, mat::Material, E::Float64)
+function λ(ty::Type{<:ScreenedRutherfordType}, mat::Function, E::Float64)
     for (i, z) in enumerate(keys(mat))
         l = -λ(ty, mat, z, E) * log(r)
         (elm′, λ′) = l < λ′ ? (z, l) : (elm′, λ′)
