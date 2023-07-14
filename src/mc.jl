@@ -1,7 +1,7 @@
 using GeometryBasics: Point, Rect3, Sphere, GeometryPrimitive, origin, widths, radius
 using LinearAlgebra: dot, norm
 using Random: rand
-using HCubature
+using QuadGK
 
 """
 `Position` : A point in 3-D.  Ultimately, derived from StaticArray.
@@ -233,7 +233,8 @@ function transport(
     (𝜆′, θ′, ϕ′) = rand(ecx, mat, pc.energy, position(pc), num_iterations) 
     stopval = dEds(bethe, pc.energy, mat(position(pc)))
     for i in 1:num_iterations
-        integral, error = hcubature(x -> dEds(bethe, pc.energy, mat(x)), coordinates(position(pc)), coordinates(position(T(p, λ′, θ′, ϕ′, 0))))
+        integral, error = quadgk(x -> dEds(bethe, pc.energy, mat(x, θ′, ϕ′, pc)), 0, 𝜆′)
+        #coordinates(position(pc)), coordinates(position(T(p, λ′, θ′, ϕ′, 0)))
         stopping_val = integral / stopval 
         stopval = stopping_val
     end
@@ -664,7 +665,7 @@ function trajectory(
 ) where {T<:Particle}
     (pc, nextr) = (p, childmost_region(reg, position(p)))
     θ, ϕ = 0.0, 0.0
-    while (!terminate(pc, reg)) && isinside(reg.shape, position(pc)) # removing voxels etc ... how to handle?
+    while (!terminate(pc, reg)) && isinside(reg.shape, position(pc)) # still requires being inside a shape?
         prevr = nextr
         (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material) # Glen - should this work with a material vector?
         (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
