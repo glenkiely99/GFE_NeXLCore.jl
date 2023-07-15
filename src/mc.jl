@@ -3,11 +3,12 @@ using LinearAlgebra: dot, norm
 using Random: rand
 using QuadGK
 
+#=
 """
 `Position` : A point in 3-D.  Ultimately, derived from StaticArray.
 """
 const Position = Point{3,Float64}
-
+=#
 """
 The MonteCarlo uses the shapes defined in GeometryBasics basics as the foundation for its 
 sample construction mechanisms.  However, GeometryBasics basics does not provide all the 
@@ -92,6 +93,7 @@ function random_point_inside(shape)::Position
     return res
 end
 
+#=
 """
 Particle represents a type that may be simulated using a transport Monte Carlo.  It must provide
 these methods:
@@ -151,7 +153,9 @@ Base.show(io::IO, el::Electron) = print(io, "Electron[$(position(el)), $(energy(
 Base.position(el::Particle) = el.current
 previous(el::Particle) = el.previous
 energy(el::Particle) = el.energy
+=#
 
+#=
 """
     discreteregions()::NTuple{4, Vector{Int}}
 
@@ -203,7 +207,7 @@ boundary, or boundaries, along with the percentage of the trajectory contained w
 
 #     return vox_fracs
 # end
-
+=#
 """
     transport(pc::Electron, mat::Material, ecx=Liljequist1989, bethe=JoyLuo)::NTuple{4, Float64}
     transport(pc::Electron, mat::Material, num_iterations::Int, ecx=Liljequist1989, bethe=JoyLuo)::NTuple{4, Float64}
@@ -213,6 +217,7 @@ The default function defining elastic scattering and energy loss for an Electron
 Returns ( `λ`, `θ`, `ϕ`, `ΔE`) where `λ` is the mean path length, `θ` is the elastic scatter angle, `ϕ` is the azimuthal elastic scatter
 angle and `ΔE` is the energy loss for transport over the distance `λ`. 'Num_iterations' is the number of desired iterations for the integrations.
 """
+#=
 function transport(
     pc::Electron,
     mat::Material, #Function - elements fixed with mass fractions changing
@@ -222,7 +227,7 @@ function transport(
     (𝜆′, θ′, ϕ′) = rand(ecx, mat, pc.energy) 
     return (𝜆′, θ′, ϕ′, 𝜆′ * dEds(bethe, pc.energy, mat))
 end
-
+=#
 function transport(
     pc::Electron,
     mat::Function,
@@ -230,7 +235,7 @@ function transport(
     ecx::Type{<:ElasticScatteringCrossSection} = Liljequist1989,
     bethe::Type{<:BetheEnergyLoss} = JoyLuo,
 )::NTuple{4,Float64}
-    (𝜆′, θ′, ϕ′) = rand(ecx, mat, pc.energy, position(pc), num_iterations) 
+    (𝜆′, θ′, ϕ′) = rand(ecx, pc, mat, pc.energy, position(pc), num_iterations) 
     stopval = dEds(bethe, pc.energy, mat(position(pc)))
     for i in 1:num_iterations
         integral, error = quadgk(x -> dEds(bethe, pc.energy, mat(x, θ′, ϕ′, pc)), 0, 𝜆′)
@@ -628,6 +633,7 @@ Run a single particle trajectory from `p` to `minE` or until the particle exits 
   * `minE` Stopping criterion
   * `terminate` a function taking `T` and `Region` that returns false except on the last step (like `terminate = (pc,r)->pc.energy < 50.0`)
 """
+#=
 function trajectory(
     eval::Function,
     p::T,
@@ -655,11 +661,12 @@ function trajectory(
     term(pc::T, _::AbstractRegion) = pc.energy < minE
     trajectory(eval, p, reg, scf, term)
 end
-
+=#
 function trajectory(
     eval::Function,
     p::T,
     reg::AbstractRegion,
+    mat::Function,
     scf::Function,
     terminate::Function,
 ) where {T<:Particle}
@@ -667,7 +674,7 @@ function trajectory(
     θ, ϕ = 0.0, 0.0
     while (!terminate(pc, reg)) && isinside(reg.shape, position(pc)) # still requires being inside a shape?
         prevr = nextr
-        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material) # Glen - should this work with a material vector?
+        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, mat, 4) # Glen - should this work with a material vector?
         (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
         (θ, ϕ) = scatter ? (θₙ, ϕₙ) : (0.0, 0.0)
         eval(pc, prevr)
@@ -677,13 +684,13 @@ function trajectory(
     eval::Function,
     p::T,
     reg::AbstractRegion,
-    scf::Function = (t::T, mat::Function) -> transport(t, mat, 4); # 4 is number of integration iterations 
+    mat::Function,
+    scf::Function = (t::T, mat::Function, num_it::Int) -> transport(t, mat, 4); # 4 is number of integration iterations 
     minE::Float64 = 50.0,
 ) where {T<:Particle}
     term(pc::T, _::AbstractRegion) = pc.energy < minE
-    trajectory(eval, p, reg, scf, term)
+    trajectory(eval, p, reg, mat, scf, term)
 end
-
 # function trajectory(
 #     eval::Function,
 #     p::T,
