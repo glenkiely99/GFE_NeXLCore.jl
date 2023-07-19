@@ -1,76 +1,10 @@
 using Dierckx
-using GeometryBasics: Point, Rect3, Sphere, GeometryPrimitive, origin, widths, radius
 using QuadGK
 
 """
     a₀ : Bohr radius (in cm)
 """
 const a₀ = ustrip(BohrRadius |> u"cm") # 0.529 Å
-
-"""
-`Position` : A point in 3-D.  Ultimately, derived from StaticArray. Glen - redefinition here as scattering is first included.
-"""
-const Position = Point{3,Float64}
-
-"""
-Particle represents a type that may be simulated using a transport Monte Carlo.  It must provide
-these methods:
-
-    position(el::Particle)::Position
-    previous(el::Particle)::Position
-    energy(el::Particle)::Float64
-
-The position of the current and previous elastic scatter locations which are stored in that Particle type.
-
-    T(prev::Position, curr::Position, energy::Energy) where {T <: Particle }
-    T(el::T, 𝜆::Float64, 𝜃::Float64, 𝜑::Float64, ΔE::Float64) where {T <: Particle }
-
-Two constructors: One to create a defined Particle and the other to create a new Particle based off
-another which is translated by `λ` at a scattering angle (`θ`, `ϕ`) which energy change of `ΔE`
-
-    transport(pc::T, mat::Material)::NTuple{4, Float64} where {T <: Particle }
-
-A function that generates the values of ( `λ`, `θ`, `ϕ`, `ΔE`) for the specified `Particle` in the specified `Material`.
-"""
-abstract type Particle end
-
-struct Electron <: Particle
-    previous::Position
-    current::Position
-    energy::Float64 # eV
-
-    """
-        Electron(prev::Position, curr::Position, energy::Float64)
-        Electron(el::Electron, 𝜆::Float64, 𝜃::Float64, 𝜑::Float64, ΔE::Float64)::Electron
-    
-    Create a new `Electron` from this one in which the new `Electron` is a distance `𝜆` from the
-    first along a trajectory that is `𝜃` and `𝜑` off the current trajectory.
-    """
-    Electron(prev::AbstractArray{Float64}, curr::AbstractArray{Float64}, energy::Float64) =
-        new(prev, curr, energy)
-
-    function Electron(el::Electron, 𝜆::Float64, 𝜃::Float64, 𝜑::Float64, ΔE::Float64)
-        (u, v, w) = LinearAlgebra.normalize(position(el) .- previous(el))
-        sc =
-            1.0 - abs(w) > 1.0e-8 ? #
-            Position( #
-                u * cos(𝜃) + sin(𝜃) * (u * w * cos(𝜑) - v * sin(𝜑)) / sqrt(1.0 - w^2), #
-                v * cos(𝜃) + sin(𝜃) * (v * w * cos(𝜑) + u * sin(𝜑)) / sqrt(1.0 - w^2), #
-                w * cos(𝜃) - sqrt(1.0 - w^2) * sin(𝜃) * cos(𝜑), # 
-            ) :
-            Position( #
-                sign(w) * sin(𝜃) * cos(𝜑), #
-                sign(w) * sin(𝜃) * sin(𝜑), #
-                sign(w) * cos(𝜃),
-            )
-        return new(position(el), position(el) .+ 𝜆 * sc, el.energy + ΔE)
-    end
-end
-
-Base.show(io::IO, el::Electron) = print(io, "Electron[$(position(el)), $(energy(el)) eV]")
-Base.position(el::Particle) = el.current
-previous(el::Particle) = el.previous
-energy(el::Particle) = el.energy
 
 """
     Rₐ(elm::Element)
@@ -295,14 +229,20 @@ function λ(ty::Type{<:ScreenedRutherfordType}, mat::Function, E::Float64)
     return λ′
 end
 =#
-function λ(ty::Type{<:ScreenedRutherfordType}, x::Float64, mat::Function, thet::Float64, phi::Float64, pc::Electron, E::Float64, r::Float64)
-    elm′, λ′ = elements[119], 1.0e308
-    material = mat(x, thet, phi, pc)
-    for (i, z) in enumerate(keys(material))
-        l = -λ(ty, material, z, E) * log(r)
-        (elm′, λ′) = l < λ′ ? (z, l) : (elm′, λ′)
-    end
-    return λ′
+function λ(ty::Type{<:ScreenedRutherfordType}, mfp::Float64, mat::ParametricMaterial, θ′::Float64, ϕ′::Float64, pc::Electron, E::Float64)
+    pos = position(Electron(pc, mfp, θ′, ϕ′, E)) #ToDo: Optimise this
+    c = massfractions(mat, pos)
+    ρ = density(mat)
+    N = atoms_per_cm³(mat::ParametricMaterial)
+    σ_tot = sum(σₜ(ty, mat.elms[i], E) * N[i] for i in eachindex(c))
+    return 1. / σ_tot
+end
+function λ(ty::Type{<:ScreenedRutherfordType}, pos::AbstractVector, mat::ParametricMaterial, E::Float64)
+    c = massfractions(mat, pos)
+    ρ = density(mat)
+    N = atoms_per_cm³(mat::ParametricMaterial)
+    σ_tot = sum(σₜ(ty, mat.elms[i], E) * N[i] for i in eachindex(c))
+    return 1. / σ_tot
 end
 
 
@@ -317,7 +257,6 @@ end
  path.  This implementation depends on two facts: 1) We are looking for the first scattering event
  so we consider all the elements and pick the one with the shortest path. 2) The process is memoryless.
 """
-#=
 function Base.rand(
     ty::Type{<:ScreenedRutherfordType},
     mat::Material, #Function
@@ -331,31 +270,32 @@ function Base.rand(
     @assert elm′ != elements[119] "Are there any elements in $mat?  Is the density ($(mat[:Density])) too low?"
     return (λ′, rand(ty, elm′, E), 2.0 * π * rand())
 end
-=#
 function Base.rand(
     ty::Type{<:ScreenedRutherfordType},
     pc::Electron,
-    mat::Function, #Material is a function
+    mat::ParametricMaterial, #Material is a function
     E::Float64,
-    pos::Position, #Position
     num_iterations::Int
     )::NTuple{3,Float64}
     elm′, λ′ = elements[119], 1.0e308
-    mat_at_pos = mat(pos)
-    r = rand()
+    #pos=position(pc)
+    #mat_at_pos = density(mat, pos) #massfrac function
+    r = log(rand())
     thet = rand(ty, elm′, E)
     phi = 2.0 * π * rand()
+    #=
     for (i, z) in enumerate(keys(mat_at_pos))
-        l = -λ(ty, mat_at_pos, z, E) * log(r)
+        l = -λ(ty, mat_at_pos, z, E) * r
         (elm′, λ′) = l < λ′ ? (z, l) : (elm′, λ′)
     end
+    =#
+    λ′ = -λ(ty, position(pc), mat, E) * r
     for i in 1:num_iterations
         #integral, error = quadgk(x -> -λ(ty, mat(x, thet, phi, pc), E), 0, λ′)
-        integral, error = quadgk(x -> -λ(ty, x, mat, thet, phi, pc, E, r), 0, λ′)
-        λnew = (integral / λ′) * log(r)
-        λ′ = λnew
+        integral, error = quadgk(x -> λ(ty, x, mat, thet, phi, pc, E), 0, λ′)
+        λ′ = - (integral / λ′) * r
     end
-    @assert elm′ != elements[119] "Are there any elements in $mat_at_pos?  Is the density ($(mat_at_pos[:Density])) too low?"
+    #@assert elm′ != elements[119] "Are there any elements in $mat_at_pos?  Is the density ($(mat_at_pos[:Density])) too low?"
     return (λ′, thet, phi)
 end
 

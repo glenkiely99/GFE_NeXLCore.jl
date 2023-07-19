@@ -217,7 +217,6 @@ The default function defining elastic scattering and energy loss for an Electron
 Returns ( `λ`, `θ`, `ϕ`, `ΔE`) where `λ` is the mean path length, `θ` is the elastic scatter angle, `ϕ` is the azimuthal elastic scatter
 angle and `ΔE` is the energy loss for transport over the distance `λ`. 'Num_iterations' is the number of desired iterations for the integrations.
 """
-#=
 function transport(
     pc::Electron,
     mat::Material, #Function - elements fixed with mass fractions changing
@@ -227,65 +226,23 @@ function transport(
     (𝜆′, θ′, ϕ′) = rand(ecx, mat, pc.energy) 
     return (𝜆′, θ′, ϕ′, 𝜆′ * dEds(bethe, pc.energy, mat))
 end
-=#
-function transport(
+
+function transport( #should work with parametric material now - Glen 
     pc::Electron,
-    mat::Function,
+    mat::ParametricMaterial,
     num_iterations::Int,
     ecx::Type{<:ElasticScatteringCrossSection} = Liljequist1989,
     bethe::Type{<:BetheEnergyLoss} = JoyLuo,
 )::NTuple{4,Float64}
-    (𝜆′, θ′, ϕ′) = rand(ecx, pc, mat, pc.energy, position(pc), num_iterations) 
-    stopval = dEds(bethe, pc.energy, mat(position(pc)))
+    (𝜆′, θ′, ϕ′) = rand(ecx, pc, mat, pc.energy, num_iterations) 
+    stopval = dEds(bethe, pc.energy, position(pc), mat)
     for i in 1:num_iterations
-        integral, error = quadgk(x -> dEds(bethe, pc.energy, mat(x, θ′, ϕ′, pc)), 0, 𝜆′)
-        #coordinates(position(pc)), coordinates(position(T(p, λ′, θ′, ϕ′, 0)))
+        integral, error = quadgk(x -> dEds(bethe, pc.energy, mat, x, θ′, ϕ′, pc), 0, 𝜆′)
         stopping_val = integral / stopval 
         stopval = stopping_val
     end
     return (𝜆′, θ′, ϕ′, 𝜆′ * stopval)
 end
-
-
-# function transport(
-#     pc::Electron,
-#     reg::Voxel,
-#     current_idxs::NTuple{3,Int},
-#     ecx::Type{<:ElasticScatteringCrossSection} = Liljequist1989,
-#     bethe::Type{<:BetheEnergyLoss} = JoyLuoContinuous,
-# )::NTuple{4,Float64}
-#     energyval = pc.energy
-#     energyloss = 0
-#     mfps = []
-#     stopping_vals = []
-#     randnum = rand() # need the same random number for each subsequent material
-#     (𝜆′, θ′, ϕ′) = rand(ecx, reg.material, energyval, randnum) 
-#     mfps.push(𝜆′)
-#     stopping_vals.push(dEds(bethe, pc.energy, reg.material))
-
-#     vox_fracs = discreteregions(reg, 𝜆′, θ′, ϕ′, current_idxs, position(pc))
-#     # here, must determine which voxels will be reached by this mfp, using discreteregions function
-#     # the percentage of the mfp inside the first voxel must be multiplied by the dEds for that mat
-#     # this is used to calculate the energy of the electron in the next voxel or mat, which should
-#     # be used to determine the mfp of the electron in this material and subsequent voxels too
-#     energyloss += 𝜆′ * vox_fracs[Tuple(current_idxs)] * dEds(bethe, pc.energy, reg.material)
-#     energyval -= energyloss
-#     already_traversed = mfps[1] * vox_fracs[Tuple(current_idxs)]
-#     for voxel_idx in vox_fracs[2:end]
-#         m = reg.parent.voxels[voxel_idx].material
-#         (𝜆′, -, -) = rand(ecx, m, energyval, randnum)
-#         mfps.push(𝜆′)
-#         # using fraction of traj in 1st assumption
-#         dE = 𝜆′ * vox_fracs[Tuple(voxel_idx)] * dEds(bethe, energyval, m)
-#         energyloss += dE
-#         energyval -= dE
-#         weights = [vox_fracs[Tuple(voxel_idx)] for voxel_idx in vox_fracs]
-#         current_mfp = already_traversed + ((sum(weights[1:length(mfps)] .* mfps) / sum(weights[1:length(mfps)])) - already_traversed) #mfp currently with weighted voxels
-#         vox_fracs = discreteregions(reg, current_mfp, θ′, ϕ′, current_idxs, position(pc))
-#         already_traversed += 𝜆′ * vox_fracs[Tuple(voxel_idx)]
-#     end
-#     return (current_mfp, θ′, ϕ′, energyloss)
-# end
 
 """
     pathlength(el::Particle)
@@ -303,30 +260,30 @@ intersection(r, p::Particle) = intersection(r, previous(p), position(p))
 A `Region` combines a geometric primative and a `Material` (with `:Density` property) and may fully contain zero or more child `Region`s.
 """
 
-abstract type AbstractRegion end
+abstract type AbstractRegion{M} end
 
 struct VoxelShape
     index::NTuple
     parent::AbstractRegion
 end
 
-struct Voxel <: AbstractRegion
+struct Voxel{M} <: AbstractRegion{M}
     shape::VoxelShape
-    material::Material
+    material::M
     parent::AbstractRegion
     children::Vector{Nothing}
     #name::String
 
     function Voxel(
         index::NTuple,
-        mat::Material,
+        mat::M,
         parent::AbstractRegion,
         #name::String = "",
-    ) 
+    ) where {M<:Material}
         @assert mat[:Density] > 0.0
         #name = name * "$index"
         shape = VoxelShape(index, parent)
-        return new(shape, mat, parent, Vector{Nothing}()) # Glen - nothing in children region
+        return new{M}(shape, mat, parent, Vector{Nothing}()) # Glen - nothing in children region
     end
 end
 
@@ -365,11 +322,11 @@ function intersection( # how to make this more efficient?
     return t
 end
 
-struct VoxelisedRegion <: AbstractRegion
+struct VoxelisedRegion{M} <: AbstractRegion{M}
     shape::GeometryPrimitive{3, Float64}
     parent::Union{Nothing, AbstractRegion}
     children::Vector{AbstractRegion}
-    material::Material
+    material::M
     voxels::Array{Voxel, 3}
     nodes::Vector{Vector{Float64}}
     name::String
@@ -378,12 +335,12 @@ struct VoxelisedRegion <: AbstractRegion
 
     function VoxelisedRegion(
         sh::RectangularShape,
-        mat::Material,
+        mat::M,
         mat_func::Function,
         parent::Union{Nothing,AbstractRegion},
         num_voxels::Tuple{Int64, Int64, Int64},
         name::Union{Nothing,String} = nothing,
-    )
+    ) where M
         name = something(
             name,
             isnothing(parent) ? "Root" : "$(parent.name)[$(length(parent.children)+1)]",
@@ -397,7 +354,7 @@ struct VoxelisedRegion <: AbstractRegion
         nodes = [sh.origin[i] .+ collect(0:num_voxels[i]) .* voxel_sizes[i] for i in 1:3]
         
         voxels = Array{Voxel}(undef, num_voxels[1], num_voxels[2], num_voxels[3])
-        res = new(sh, parent, Vector{AbstractRegion}(), mat, voxels, nodes, name, voxel_sizes, num_voxels)
+        res = new{M}(sh, parent, Vector{AbstractRegion}(), mat, voxels, nodes, name, voxel_sizes, num_voxels)
 
         for i in 1:num_voxels[1]
             for j in 1:num_voxels[2]
@@ -437,26 +394,26 @@ end
 nodes(vr::VoxelisedRegion, i::Integer, j::Integer, k::Integer) = (vr.nodes[1][i], vr.nodes[2][j], vr.nodes[3][k])
     
 
-struct Region <: AbstractRegion
+struct Region{M} <: AbstractRegion{M}
     shape::GeometryPrimitive{3,Float64}
-    material::Material
+    material::M
     parent::Union{Nothing,AbstractRegion}
     children::Vector{AbstractRegion}
     name::String
 
     function Region(
         sh::T,
-        mat::Material,
+        mat::M,
         parent::Union{Nothing,AbstractRegion},
         name::Union{Nothing,String} = nothing,
         ntests = 1000,
-    ) where {T}
-        @assert mat[:Density] > 0.0
+    ) where {T, M}
+        #@assert mat[:Density] > 0.0 # Glen - removed
         name = something(
             name,
             isnothing(parent) ? "Root" : "$(parent.name)[$(length(parent.children)+1)]",
         )
-        res = new(sh, mat, parent, AbstractRegion[], name)
+        res = new{M}(sh, mat, parent, AbstractRegion[], name)
         if !isnothing(parent)
             @assert all(
                 _ -> isinside(parent.shape, random_point_inside(sh)),
@@ -563,6 +520,7 @@ function take_step(
         intersection(reg.shape, newP), # Leave this Region?
         (intersection(ch.shape, newP) for ch in reg.children)..., # Enter a new child Region?
     )
+    println(t)
     scatter = t > 1.0
     if !scatter # Enter new region
         newP = T(p, (t + ϵ) * 𝜆, 𝜃, 𝜑, (t + ϵ) * ΔE)
@@ -611,11 +569,12 @@ function take_step(
     ϵ::Float64 = 1.0e-12,
 )::Tuple{T,AbstractRegion,Bool} where {T<:Particle}
     @assert isinside(reg.shape, position(p)) position(p), minimum(reg.shape), maximum(reg.shape)
-    voxel_idxs = find_voxel_by_position(reg, position(p))
-    if any(1 .> voxel_idxs .|| voxel_idxs .> reg.num_voxels)
-        error()
-    end
-    regv = reg.voxels[voxel_idxs...]
+    #voxel_idxs = find_voxel_by_position(reg, position(p))
+    #if any(1 .> voxel_idxs .|| voxel_idxs .> reg.num_voxels)
+    #    error()
+    #end
+    #regv = reg.voxels[voxel_idxs...]
+    regv=reg
     take_step(p, regv, 𝜆, 𝜃, 𝜑, ΔE, ϵ)
 end
 
@@ -662,20 +621,23 @@ function trajectory(
     trajectory(eval, p, reg, scf, term)
 end
 =#
+
+
 function trajectory(
     eval::Function,
     p::T,
     reg::AbstractRegion,
-    mat::Function,
+    mat::ParametricMaterial,
     scf::Function,
     terminate::Function,
 ) where {T<:Particle}
     (pc, nextr) = (p, childmost_region(reg, position(p)))
     θ, ϕ = 0.0, 0.0
-    while (!terminate(pc, reg)) && isinside(reg.shape, position(pc)) # still requires being inside a shape?
+    while (!terminate(pc, reg)) && isinside(reg.shape, position(pc)) # still requires being inside a shape
         prevr = nextr
-        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, mat, 4) # Glen - should this work with a material vector?
+        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, mat, 4) # Glen - should work for parametric material... 
         (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
+        #println(nextr) # nextr is always the chamber.. is this correct? Should be VoxelisedRegion?!
         (θ, ϕ) = scatter ? (θₙ, ϕₙ) : (0.0, 0.0)
         eval(pc, prevr)
     end
@@ -684,41 +646,10 @@ function trajectory(
     eval::Function,
     p::T,
     reg::AbstractRegion,
-    mat::Function,
-    scf::Function = (t::T, mat::Function, num_it::Int) -> transport(t, mat, 4); # 4 is number of integration iterations 
+    mat::ParametricMaterial,
+    scf::Function = (t::T, mat::ParametricMaterial, num_it::Int) -> transport(t, mat, 4); # 4 is number of integration iterations 
     minE::Float64 = 50.0,
 ) where {T<:Particle}
     term(pc::T, _::AbstractRegion) = pc.energy < minE
     trajectory(eval, p, reg, mat, scf, term)
 end
-# function trajectory(
-#     eval::Function,
-#     p::T,
-#     reg::Voxel, # works only for voxels
-#     scf::Function,
-#     terminate::Function,
-# ) where {T<:Particle}
-#     current_idxs = find_voxel_by_position(reg.parent, position(p))
-#     (pc, nextr) = (p, reg.parent.voxels[current_idxs])
-#     θ, ϕ = 0.0, 0.0 # this should be okay
-#     while (!terminate(pc, reg)) && isinside(reg.parent.shape, position(pc)) # inside voxelised reg
-#         prevr = nextr 
-#         (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr, current_idxs) # scf is the transport function - takes 1 material as the input 
-#         new_position = Position(position(p) + λ_vec)
-#         new_idxs = find_voxel_by_position(reg.parent, new_position)
-
-#         (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
-#         (θ, ϕ) = scatter ? (θₙ, ϕₙ) : (0.0, 0.0)
-#         eval(pc, prevr)
-#     end
-# end
-# function trajectory(
-#     eval::Function,
-#     p::T,
-#     reg::Voxel,
-#     scf::Function = (t::T, mat::Material) -> transport(t, mat); # Material vector or voxel details
-#     minE::Float64 = 50.0,
-# ) where {T<:Particle}
-#     term(pc::T, _::AbstractRegion) = pc.energy < minE
-#     trajectory(eval, p, reg, scf, term)
-# end
