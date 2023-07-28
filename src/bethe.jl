@@ -130,7 +130,7 @@ function dEds(
 )
     ρ = density(mat, pos)
     return sum(keys(mat.elms)) do el
-        dEds(ty, e, el, ρ, mip) * mat.elms[el]
+        dEds(ty, e, mat.elms[el], ρ, mip) * mat.massfrac[elms[el]]
     end
 end
 function dEds(
@@ -146,7 +146,7 @@ function dEds(
     pos = position(Electron(pc, mfp, θ′, ϕ′, 0.0)) #ToDo: Optimise this
     c = massfractions(mat, pos)
     ρ = density(mat, pos)
-    return sum(dEds(ty, e, mat.elms[i], ρ, mip) * mat.elms[i] for i in eachindex(c))
+    return sum(dEds(ty, e, mat.elms[i], ρ, mip) * mat.massfrac[elms[i]] for i in 1:length(c))
 end
 
 """

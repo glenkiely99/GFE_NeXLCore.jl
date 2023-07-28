@@ -233,15 +233,15 @@ function λ(ty::Type{<:ScreenedRutherfordType}, mfp::Float64, mat::ParametricMat
     pos = position(Electron(pc, mfp, θ′, ϕ′, E)) #ToDo: Optimise this
     c = massfractions(mat, pos)
     ρ = density(mat)
-    N = atoms_per_cm³(mat::ParametricMaterial)
-    σ_tot = sum(σₜ(ty, mat.elms[i], E) * N[i] for i in eachindex(c))
+    #N = atoms_per_cm³(mat::ParametricMaterial)
+    σ_tot = sum(σₜ(ty, mat.elms[i], E) * (atoms_per_g(mat.elms[i]) * mat.massfrac[mat.elms[i]] * density(mat)) for i in 1:length(c))
     return 1. / σ_tot
 end
 function λ(ty::Type{<:ScreenedRutherfordType}, pos::AbstractVector, mat::ParametricMaterial, E::Float64)
     c = massfractions(mat, pos)
     ρ = density(mat)
-    N = atoms_per_cm³(mat::ParametricMaterial)
-    σ_tot = sum(σₜ(ty, mat.elms[i], E) * N[i] for i in eachindex(c))
+    #N = atoms_per_cm³(mat::ParametricMaterial)
+    σ_tot = sum(σₜ(ty, mat.elms[i], E) * (atoms_per_g(mat.elms[i]) * mat.massfrac[mat.elms[i]] * density(mat)) for i in 1:length(c))
     return 1. / σ_tot
 end
 
