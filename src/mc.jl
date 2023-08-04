@@ -394,7 +394,6 @@ function childmost_region(reg::Region, pos::AbstractArray{Float64})::AbstractReg
     res = findfirst(ch -> isinside(ch.shape, pos), reg.children)
     return !isnothing(res) ? childmost_region(reg.children[res], pos) : reg
 end
-#=
 function childmost_region(reg::Union{VoxelisedRegion, Voxel}, pos::AbstractArray{Float64})::Union{VoxelisedRegion, Voxel} # in a voxel, the voxelisedregion will be passed here
     # take_step function determines if the voxel has a parent, if so then the parent is input here
     # from this parent, the child region containing the position is chosen 
@@ -402,7 +401,6 @@ function childmost_region(reg::Union{VoxelisedRegion, Voxel}, pos::AbstractArray
     return !isnothing(res) ? childmost_region(reg.children[res], pos) : reg # res is NOT nothing? child found, pos contained in child.
     # res = nothing? No child contains the position, region input is returned. 
 end
-=#
 function childmost_region(reg::AbstractRegion, pos::AbstractArray{Float64})::AbstractRegion # Glen - to deal with the recursive calling of this function 
     if reg isa Region
         return childmost_region(Region(reg), pos)
@@ -542,7 +540,7 @@ function trajectory(
     θ, ϕ = 0.0, 0.0
     while (!terminate(pc, reg)) && isinside(reg.shape, position(pc))
         prevr = nextr
-        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material) # Glen - should this work for voxelised region? For voxel..?
+        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material) 
         (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
         (θ, ϕ) = scatter ? (θₙ, ϕₙ) : (0.0, 0.0)
         eval(pc, prevr)
@@ -569,11 +567,10 @@ function trajectory(
 ) where {T<:Particle}
     (pc, nextr) = (p, childmost_region(reg, position(p)))
     θ, ϕ = 0.0, 0.0
-    while (!terminate(pc, reg)) && isinside(reg.shape, position(pc)) # still requires being inside a shape
+    while (!terminate(pc, reg)) && isinside(reg.shape, position(pc)) 
         prevr = nextr
-        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, mat, 1) # Glen - should work for parametric material... 
+        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, mat, 4) 
         (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
-        #println(nextr) # nextr is always the chamber.. is this correct? Should be VoxelisedRegion?!
         (θ, ϕ) = scatter ? (θₙ, ϕₙ) : (0.0, 0.0)
         eval(pc, prevr)
     end
@@ -583,7 +580,7 @@ function trajectory(
     p::T,
     reg::AbstractRegion,
     mat::ParametricMaterial,
-    scf::Function = (t::T, mat::ParametricMaterial, num_it::Int) -> transport(t, mat, 1); # 4 is number of integration iterations 
+    scf::Function = (t::T, mat::ParametricMaterial, num_it::Int) -> transport(t, mat, 4); # 1 is number of integration iterations 
     minE::Float64 = 50.0,
 ) where {T<:Particle}
     term(pc::T, _::AbstractRegion) = pc.energy < minE
