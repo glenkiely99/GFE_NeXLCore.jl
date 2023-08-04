@@ -129,16 +129,18 @@ function dEds(
     mip::Type{<:NeXLMeanIonizationPotential} = Berger1982,
 )
     ρ = density(mat, pos)
-    return sum(keys(mat.elms)) do el
-        dEds(ty, e, mat.elms[el], ρ, mip) * mat.massfrac[elms[el]]
+
+    return sum(mat.elms) do el
+        dEds(ty, e, el, ρ, mip) * mat.massfrac[el]
     end
 end
+
 function dEds(
     ty::Type{<:BetheEnergyLoss},
     e::Float64,
     mat::ParametricMaterial,
-    mfp::Float64, 
-    θ′::Float64, 
+    mfp::Float64,
+    θ′::Float64,
     ϕ′::Float64,
     pc::Electron,
     mip::Type{<:NeXLMeanIonizationPotential} = Berger1982,
@@ -146,7 +148,8 @@ function dEds(
     pos = position(Electron(pc, mfp, θ′, ϕ′, 0.0)) #ToDo: Optimise this
     c = massfractions(mat, pos)
     ρ = density(mat, pos)
-    return sum(dEds(ty, e, mat.elms[i], ρ, mip) * mat.massfrac[elms[i]] for i in 1:length(c))
+
+    return sum(dEds(ty, e, mat.elms[i], ρ, mip) * mat.massfrac[mat.elms[i]] for i in 1:length(c))
 end
 
 """

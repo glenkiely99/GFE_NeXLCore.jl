@@ -520,7 +520,7 @@ function take_step(
         intersection(reg.shape, newP), # Leave this Region?
         (intersection(ch.shape, newP) for ch in reg.children)..., # Enter a new child Region?
     )
-    println(t)
+    #println(t) # always huge...
     scatter = t > 1.0
     if !scatter # Enter new region
         newP = T(p, (t + ϵ) * 𝜆, 𝜃, 𝜑, (t + ϵ) * ΔE)
