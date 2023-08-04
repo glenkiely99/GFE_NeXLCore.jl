@@ -394,6 +394,7 @@ function childmost_region(reg::Region, pos::AbstractArray{Float64})::AbstractReg
     res = findfirst(ch -> isinside(ch.shape, pos), reg.children)
     return !isnothing(res) ? childmost_region(reg.children[res], pos) : reg
 end
+#=
 function childmost_region(reg::Union{VoxelisedRegion, Voxel}, pos::AbstractArray{Float64})::Union{VoxelisedRegion, Voxel} # in a voxel, the voxelisedregion will be passed here
     # take_step function determines if the voxel has a parent, if so then the parent is input here
     # from this parent, the child region containing the position is chosen 
@@ -401,6 +402,7 @@ function childmost_region(reg::Union{VoxelisedRegion, Voxel}, pos::AbstractArray
     return !isnothing(res) ? childmost_region(reg.children[res], pos) : reg # res is NOT nothing? child found, pos contained in child.
     # res = nothing? No child contains the position, region input is returned. 
 end
+=#
 function childmost_region(reg::AbstractRegion, pos::AbstractArray{Float64})::AbstractRegion # Glen - to deal with the recursive calling of this function 
     if reg isa Region
         return childmost_region(Region(reg), pos)
@@ -410,6 +412,18 @@ function childmost_region(reg::AbstractRegion, pos::AbstractArray{Float64})::Abs
         error("Unsupported region type: ", typeof(reg))
     end
 end
+function childmost_region(reg::VoxelisedRegion, pos::AbstractArray{Float64})::Union{VoxelisedRegion, Voxel}
+    res = findfirst(ch -> isinside(ch.shape, pos), reg.children)
+
+    if !isnothing(res)
+        return childmost_region(reg.children[res], pos)
+    else
+        voxel_indices = find_voxel_by_position(reg, pos)
+        voxel = reg.voxels[voxel_indices...]
+        return voxel
+    end
+end
+
 
 """
     find_voxel_by_position(voxel_boundaries, pos)
@@ -417,7 +431,7 @@ end
 Find the next Voxel containing the point `pos`.
 """
 function find_voxel_by_position(vr::VoxelisedRegion, pos) 
-    return ceil.(Int, (pos - vr.shape.origin) ./ vr.voxel_sizes)
+    return ceil.(Int, (pos - vr.shape.origin) ./ vr.voxel_sizes) # returns indices of voxels
 end
 
 """
@@ -492,12 +506,14 @@ function take_step(
     ϵ::Float64 = 1.0e-12,
 )::Tuple{T,AbstractRegion,Bool} where {T<:Particle}
     @assert isinside(reg.shape, position(p)) position(p), minimum(reg.shape), maximum(reg.shape)
-    #voxel_idxs = find_voxel_by_position(reg, position(p))
-    #if any(1 .> voxel_idxs .|| voxel_idxs .> reg.num_voxels)
-    #    error()
-    #end
-    #regv = reg.voxels[voxel_idxs...]
+    # below was commented. Why?
+    voxel_idxs = find_voxel_by_position(reg, position(p))
+    if any(1 .> voxel_idxs .|| voxel_idxs .> reg.num_voxels)
+        error()
+    end
+    regv = reg.voxels[voxel_idxs...]
     regv=reg
+    # above was commented. Why?
     take_step(p, regv, 𝜆, 𝜃, 𝜑, ΔE, ϵ)
 end
 
@@ -526,7 +542,6 @@ function trajectory(
     θ, ϕ = 0.0, 0.0
     while (!terminate(pc, reg)) && isinside(reg.shape, position(pc))
         prevr = nextr
-        println(nextr)
         (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material) # Glen - should this work for voxelised region? For voxel..?
         (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
         (θ, ϕ) = scatter ? (θₙ, ϕₙ) : (0.0, 0.0)
@@ -556,7 +571,7 @@ function trajectory(
     θ, ϕ = 0.0, 0.0
     while (!terminate(pc, reg)) && isinside(reg.shape, position(pc)) # still requires being inside a shape
         prevr = nextr
-        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, mat, 4) # Glen - should work for parametric material... 
+        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, mat, 1) # Glen - should work for parametric material... 
         (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
         #println(nextr) # nextr is always the chamber.. is this correct? Should be VoxelisedRegion?!
         (θ, ϕ) = scatter ? (θₙ, ϕₙ) : (0.0, 0.0)
@@ -568,7 +583,7 @@ function trajectory(
     p::T,
     reg::AbstractRegion,
     mat::ParametricMaterial,
-    scf::Function = (t::T, mat::ParametricMaterial, num_it::Int) -> transport(t, mat, 4); # 4 is number of integration iterations 
+    scf::Function = (t::T, mat::ParametricMaterial, num_it::Int) -> transport(t, mat, 1); # 4 is number of integration iterations 
     minE::Float64 = 50.0,
 ) where {T<:Particle}
     term(pc::T, _::AbstractRegion) = pc.energy < minE
