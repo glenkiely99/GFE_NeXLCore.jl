@@ -93,7 +93,7 @@ function random_point_inside(shape)::Position
     return res
 end
 
-#=
+#= # Glen - moved this to another script
 """
 Particle represents a type that may be simulated using a transport Monte Carlo.  It must provide
 these methods:
@@ -155,59 +155,6 @@ previous(el::Particle) = el.previous
 energy(el::Particle) = el.energy
 =#
 
-#=
-"""
-    discreteregions()::NTuple{4, Vector{Int}}
-
-The function defining the regions visited by an electron in the continuous voxel model. 
-
-Returns the indices of the regions visited, when given a value for `λ` (the mean path length), which extends past the voxel
-boundary, or boundaries, along with the percentage of the trajectory contained within the regions.
-"""
-# function discreteregions(
-#     reg::Voxel,
-#     λ::Float64,
-#     θ::Float64,
-#     ϕ::Float64,
-#     current_idxs::NTuple{3,Int},
-#     pos::Position,
-# )::Dict{Tuple{Int, Int, Int}, Float64}
-#     path_vec = [λ * sin(θ) * cos(ϕ), λ * sin(θ) * sin(ϕ), λ * cos(θ)]
-    
-#     nodevals = reg.parent.nodes
-#     vox_dims = reg.parent.voxel_sizes
-#     vox = current_idxs
-
-#     step = [sign(dir) for dir in path_vec] # pos or negative path along x,y,z
-#     tMax = [((nodevals[vox[i] + max(step[i], 0), i] - pos[i]) / path_vec[i]) for i in 1:3] # adds 1 if travelling positive
-#     tDelta = [vox_dims[i] / abs(path_vec[i]) for i in 1:3] # when line crosses into next voxel along x,y,z
-
-
-#     vox_fracs = Dict{Tuple{Int, Int, Int}, Float64}()
-
-#     while true
-#         #fraction of the total path length within current voxel
-#         t_next = minimum(tMax)
-#         if t_next > 1
-#             t_next = 1
-#         end
-
-#         vox_fracs[Tuple(vox)] = get(vox_fracs, Tuple(vox), 0) + t_next / norm(path_vec) #fraction of total path length in this voxel
-    
-#         # end of the path, break
-#         if t_next == 1
-#             break
-#         end
-    
-#         #or move to the next voxel along the path
-#         dim = argmin(tMax) # dimension of closest voxel
-#         tMax[dim] += tDelta[dim] #increment the tMax value in the dimension found above by tDelta[dim], the fraction of the total path length required to cross a voxel in that dimension. 
-#         vox[dim] += step[dim] # increment voxel index in this dimension, either + or - 1
-#     end
-
-#     return vox_fracs
-# end
-=#
 """
     transport(pc::Electron, mat::Material, ecx=Liljequist1989, bethe=JoyLuo)::NTuple{4, Float64}
     transport(pc::Electron, mat::Material, num_iterations::Int, ecx=Liljequist1989, bethe=JoyLuo)::NTuple{4, Float64}
@@ -469,30 +416,6 @@ end
 
 Find the next Voxel containing the point `pos`.
 """
-
-# function find_voxel_by_position(nodes, pos) 
-#    xidx = findfirst(x -> pos[1] > x, [nodes[i, 1, 1][1] for i in 1:size(nodes, 1)])
-#    yidx = findfirst(y -> pos[2] > y, [nodes[1, j, 1][2] for j in 1:size(nodes, 2)]) 
-#    zidx = findfirst(z -> pos[3] > z, [nodes[1, 1, k][3] for k in 1:size(nodes, 3)]) 
-#    return (xidx, yidx, zidx) 
-# end
-# function find_voxel_by_position(nodes, pos) 
-#     x_nodes = [nodes[i, 1, 1][1] for i in 1:size(nodes, 1)]
-#     y_nodes = [nodes[1, j, 1][2] for j in 1:size(nodes, 2)]
-#     z_nodes = [nodes[1, 1, k][3] for k in 1:size(nodes, 3)]
-
-#     xidx = findlast(x -> pos[1] >= x, x_nodes)
-#     yidx = findlast(y -> pos[2] >= y, y_nodes)
-#     zidx = findlast(z -> pos[3] >= z, z_nodes)
-
-#     #beyond the last node?
-#     if xidx == nothing || yidx == nothing || zidx == nothing || 
-#        xidx == length(x_nodes) || yidx == length(y_nodes) || zidx == length(z_nodes)
-#         return nothing
-#     else
-#         return (xidx, yidx, zidx) 
-#     end
-# end
 function find_voxel_by_position(vr::VoxelisedRegion, pos) 
     return ceil.(Int, (pos - vr.shape.origin) ./ vr.voxel_sizes)
 end
@@ -592,7 +515,6 @@ Run a single particle trajectory from `p` to `minE` or until the particle exits 
   * `minE` Stopping criterion
   * `terminate` a function taking `T` and `Region` that returns false except on the last step (like `terminate = (pc,r)->pc.energy < 50.0`)
 """
-#=
 function trajectory(
     eval::Function,
     p::T,
@@ -604,7 +526,8 @@ function trajectory(
     θ, ϕ = 0.0, 0.0
     while (!terminate(pc, reg)) && isinside(reg.shape, position(pc))
         prevr = nextr
-        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material) # Glen - should this work with a material vector?
+        println(nextr)
+        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material) # Glen - should this work for voxelised region? For voxel..?
         (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
         (θ, ϕ) = scatter ? (θₙ, ϕₙ) : (0.0, 0.0)
         eval(pc, prevr)
@@ -620,8 +543,6 @@ function trajectory(
     term(pc::T, _::AbstractRegion) = pc.energy < minE
     trajectory(eval, p, reg, scf, term)
 end
-=#
-
 
 function trajectory(
     eval::Function,
