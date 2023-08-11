@@ -130,8 +130,8 @@ function dEds(
 )
     ρ = density(mat, pos)
 
-    return sum(mat.elms) do el
-        dEds(ty, e, el, ρ, mip) * mat.massfrac[el]
+    return sum(enumerate(mat.elms)) do (i, el)
+        dEds(ty, e, el, ρ, mip) * mat.massfrac[i]
     end
 end
 
@@ -149,7 +149,7 @@ function dEds(
     c = massfractions(mat, pos)
     ρ = density(mat, pos)
 
-    return sum(dEds(ty, e, mat.elms[i], ρ, mip) * mat.massfrac[mat.elms[i]] for i in 1:length(c))
+    return sum(dEds(ty, e, elm, ρ, mip) * mat.massfrac[i] for (i, elm) in enumerate(mat.elms))
 end
 
 """

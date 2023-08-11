@@ -394,6 +394,7 @@ function childmost_region(reg::Region, pos::AbstractArray{Float64})::AbstractReg
     res = findfirst(ch -> isinside(ch.shape, pos), reg.children)
     return !isnothing(res) ? childmost_region(reg.children[res], pos) : reg
 end
+# Glen - check if the below is necessary
 function childmost_region(reg::Union{VoxelisedRegion, Voxel}, pos::AbstractArray{Float64})::Union{VoxelisedRegion, Voxel} # in a voxel, the voxelisedregion will be passed here
     # take_step function determines if the voxel has a parent, if so then the parent is input here
     # from this parent, the child region containing the position is chosen 
@@ -401,6 +402,7 @@ function childmost_region(reg::Union{VoxelisedRegion, Voxel}, pos::AbstractArray
     return !isnothing(res) ? childmost_region(reg.children[res], pos) : reg # res is NOT nothing? child found, pos contained in child.
     # res = nothing? No child contains the position, region input is returned. 
 end
+# Glen - check if the above is necessary
 function childmost_region(reg::AbstractRegion, pos::AbstractArray{Float64})::AbstractRegion # Glen - to deal with the recursive calling of this function 
     if reg isa Region
         return childmost_region(Region(reg), pos)

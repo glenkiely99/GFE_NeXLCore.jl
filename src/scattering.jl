@@ -234,14 +234,14 @@ function λ(ty::Type{<:ScreenedRutherfordType}, mfp::Float64, mat::ParametricMat
     c = massfractions(mat, pos)
     ρ = density(mat)
     #N = atoms_per_cm³(mat::ParametricMaterial)
-    σ_tot = sum(σₜ(ty, mat.elms[i], E) * (atoms_per_g(mat.elms[i]) * mat.massfrac[mat.elms[i]] * density(mat)) for i in 1:length(c))
+    σ_tot = sum(σₜ(ty, elm, E) * (atoms_per_g(elm) * mat.massfrac[i] * density(mat)) for (i, elm) in enumerate(mat.elms))
     return 1. / σ_tot
 end
 function λ(ty::Type{<:ScreenedRutherfordType}, pos::AbstractVector, mat::ParametricMaterial, E::Float64)
     c = massfractions(mat, pos)
     ρ = density(mat)
     #N = atoms_per_cm³(mat::ParametricMaterial)
-    σ_tot = sum(σₜ(ty, mat.elms[i], E) * (atoms_per_g(mat.elms[i]) * mat.massfrac[mat.elms[i]] * density(mat)) for i in 1:length(c))
+    σ_tot = sum(σₜ(ty, elm, E) * (atoms_per_g(elm) * mat.massfrac[i] * density(mat)) for (i, elm) in enumerate(mat.elms))
     return 1. / σ_tot
 end
 
@@ -278,20 +278,23 @@ function Base.rand(
     num_iterations::Int
     )::NTuple{3,Float64}
     elm′, λ′ = elements[119], 1.0e308
-    #pos=position(pc)
-    #mat_at_pos = density(mat, pos) #massfrac function
+    σ_arr = [σₜ(ty, elm, E) for elm in mat.elms]
+    σ_tot = sum(σ_arr)
+    rval = rand() * σ_tot
+    for (elm, sigma_val) in zip(mat.elms, σ_arr)
+        rval -= sigma_val
+        if rval ≤ 0
+            elm′ = elm
+        end
+    end
+    if elm′ == elements[119]
+        elm′ = mat.elms[end]
+    end
     r = log(rand())
     thet = rand(ty, elm′, E)
     phi = 2.0 * π * rand()
-    #=
-    for (i, z) in enumerate(keys(mat_at_pos))
-        l = -λ(ty, mat_at_pos, z, E) * r
-        (elm′, λ′) = l < λ′ ? (z, l) : (elm′, λ′)
-    end
-    =#
     λ′ = -λ(ty, position(pc), mat, E) * r
     for i in 1:num_iterations
-        #integral, error = quadgk(x -> -λ(ty, mat(x, thet, phi, pc), E), 0, λ′)
         integral, error = quadgk(x -> λ(ty, x, mat, thet, phi, pc, E), 0, λ′)
         λ′ = - (integral / λ′) * r
     end

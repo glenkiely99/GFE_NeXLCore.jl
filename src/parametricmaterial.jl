@@ -3,7 +3,7 @@ using StaticArrays
 function volume_conserving_density(elms::SVector{N, Element}) where N
     ρ_pure = SVector{N, Float64}(density.(elms))
     function _density(c, elms)
-        return 1. / sum(c[elm] / ρ_pure[i] for (i, elm) in enumerate(elms))
+        return 1. / sum(c[i] / ρ_pure[i] for (i, elm) in enumerate(elms))
     end
     return _density
 end
@@ -35,7 +35,9 @@ The mass fraction and atomic weight are immutable but the `Properties` can be mo
 struct ParametricMaterial{T<:AbstractFloat, N}
     name::String
     elms::SVector{N, Element}
-    massfrac::Dict{Element, T}
+    # chane to svector of type T
+    #massfrac::Dict{Element, T}
+    massfrac::MVector{N, T}
     massfracfunc!::Function
     a::SVector{N, T} # Optional: custom atomic weights for the keys in this Material
     ρ::Function
@@ -59,7 +61,7 @@ struct ParametricMaterial{T<:AbstractFloat, N}
     ) where {T<:AbstractFloat}
         N = length(elms)
         elms = SVector{N, Element}(elms) # needed?
-        massfrac = isnothing(massfracfunc!) ? Dict(elms .=> ones(T, N)) : Dict(elms .=> rand(T, N))
+        massfrac = isnothing(massfracfunc!) ? MVector{N,T}(ones(T, N)) : MVector{N,T}(rand(T, N))
         if isnothing(ρ)
             ρ = volume_conserving_density(elms)
         end
@@ -89,7 +91,7 @@ function density(mat::ParametricMaterial)
 end
 
 function atoms_per_cm³(mat::ParametricMaterial) 
-        return sum(atoms_per_g(elm) * mat.massfrac[elm] * density(mat) for elm in mat.elms) 
+        return sum(atoms_per_g(elm) * mat.massfrac[i] * density(mat) for (i, elm) in enumerate(mat.elms))
 end
 
 """
