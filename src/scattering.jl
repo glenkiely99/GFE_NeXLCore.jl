@@ -270,7 +270,7 @@ end
 """
 function Base.rand(
     ty::Type{<:ScreenedRutherfordType},
-    mat::Material, #Function
+    mat::Material, 
     E::Float64,
 )::NTuple{3,Float64}
     elm′, λ′ = elements[119], 1.0e308
@@ -278,7 +278,6 @@ function Base.rand(
         l = -λ(ty, mat, z, E) * log(rand())
         (elm′, λ′) = l < λ′ ? (z, l) : (elm′, λ′)
     end
-    #println(elm′) # why does theta change between parametric and voxel models
     @assert elm′ != elements[119] "Are there any elements in $mat?  Is the density ($(mat[:Density])) too low?"
     return (λ′, rand(ty, elm′, E), 2.0 * π * rand())
 end
@@ -290,7 +289,6 @@ function Base.rand(
     num_iterations::Int
     )::NTuple{3,Float64}
     elm′, λ′ = elements[119], 1.0e308
-    # Calculate direction
     σ_arr = σₜ_all(ty, mat, E)
     σ_tot = sum(σ_arr) 
     rval = rand() * σ_tot
@@ -304,7 +302,6 @@ function Base.rand(
     if elm′ == elements[119]
         elm′ = mat.elms[end]
     end
-    #println(elm′) # why does theta change between parametric and voxel models
     θ = rand(ty, elm′, E)
     ϕ = 2.0 * π * rand()
 
@@ -315,7 +312,6 @@ function Base.rand(
         λ′ = - (integral / λ′) * r
     end
     massfractions(mat, position(Electron(pc, λ′, θ, ϕ, 0.0)))
-    
     #@assert elm′ != elements[119] "Are there any elements in $mat_at_pos?  Is the density ($(mat_at_pos[:Density])) too low?"
     return (λ′, θ, ϕ)
 end
