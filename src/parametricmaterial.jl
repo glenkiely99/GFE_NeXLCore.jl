@@ -91,7 +91,7 @@ function density(mat::ParametricMaterial)
 end
 
 function atoms_per_cm³(mat::ParametricMaterial) 
-        return sum(atoms_per_g(elm) * mat.massfrac[i] * density(mat) for (i, elm) in enumerate(mat.elms))
+    return sum(atoms_per_g(elm) * mat.massfrac[i] * density(mat) for (i, elm) in enumerate(mat.elms))
 end
 
 """

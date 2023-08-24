@@ -179,7 +179,7 @@ function transport( #should work with parametric material now - Glen
     mat::ParametricMaterial,
     num_iterations::Int,
     ecx::Type{<:ElasticScatteringCrossSection} = Liljequist1989,
-    bethe::Type{<:BetheEnergyLoss} = JoyLuo,
+    bethe::Type{<:BetheEnergyLoss} = JoyLuo
 )::NTuple{4,Float64}
     (𝜆′, θ′, ϕ′) = rand(ecx, pc, mat, pc.energy, num_iterations) 
     stopval = dEds(bethe, pc.energy, position(pc), mat)
@@ -395,7 +395,7 @@ function childmost_region(reg::Region, pos::AbstractArray{Float64})::AbstractReg
     return !isnothing(res) ? childmost_region(reg.children[res], pos) : reg
 end
 # Glen - check if the below is necessary
-function childmost_region(reg::Union{VoxelisedRegion, Voxel}, pos::AbstractArray{Float64})::Union{VoxelisedRegion, Voxel} # in a voxel, the voxelisedregion will be passed here
+function childmost_region(reg::Voxel, pos::AbstractArray{Float64})::Union{VoxelisedRegion, Voxel} # in a voxel, the voxelisedregion will be passed here
     # take_step function determines if the voxel has a parent, if so then the parent is input here
     # from this parent, the child region containing the position is chosen 
     res = findfirst(ch -> isinside(ch.shape, pos), reg.children)
@@ -457,7 +457,6 @@ function take_step(
         intersection(reg.shape, newP), # Leave this Region?
         (intersection(ch.shape, newP) for ch in reg.children)..., # Enter a new child Region?
     )
-    #println(t) # always huge...
     scatter = t > 1.0
     if !scatter # Enter new region
         newP = T(p, (t + ϵ) * 𝜆, 𝜃, 𝜑, (t + ϵ) * ΔE)
@@ -506,14 +505,12 @@ function take_step(
     ϵ::Float64 = 1.0e-12,
 )::Tuple{T,AbstractRegion,Bool} where {T<:Particle}
     @assert isinside(reg.shape, position(p)) position(p), minimum(reg.shape), maximum(reg.shape)
-    # below was commented. Why?
     voxel_idxs = find_voxel_by_position(reg, position(p))
     if any(1 .> voxel_idxs .|| voxel_idxs .> reg.num_voxels)
         error()
     end
     regv = reg.voxels[voxel_idxs...]
     regv=reg
-    # above was commented. Why?
     take_step(p, regv, 𝜆, 𝜃, 𝜑, ΔE, ϵ)
 end
 
@@ -544,7 +541,7 @@ function trajectory(
         prevr = nextr
         (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material) 
         (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
-        (θ, ϕ) = scatter ? (θₙ, ϕₙ) : (0.0, 0.0)
+        (θ, ϕ) = scatter ? (θₙ, ϕₙ) : (0.0, 0.0) # scatter true? New angles. False? Old angles. 
         eval(pc, prevr)
     end
 end
@@ -571,7 +568,7 @@ function trajectory(
     θ, ϕ = 0.0, 0.0
     while (!terminate(pc, reg)) && isinside(reg.shape, position(pc)) 
         prevr = nextr
-        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, mat, 4) 
+        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, mat, 4, θ, ϕ) 
         (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
         (θ, ϕ) = scatter ? (θₙ, ϕₙ) : (0.0, 0.0)
         eval(pc, prevr)
@@ -582,9 +579,108 @@ function trajectory(
     p::T,
     reg::AbstractRegion,
     mat::ParametricMaterial,
-    scf::Function = (t::T, mat::ParametricMaterial, num_it::Int) -> transport(t, mat, 4); # 1 is number of integration iterations 
+    scf::Function = (t::T, mat::ParametricMaterial, num_it::Int, θ::Float64, ϕ::Float64) -> transport(t, mat, 4, θ, ϕ); # Adjusted the function definition to include θ, ϕ
     minE::Float64 = 50.0,
 ) where {T<:Particle}
     term(pc::T, _::AbstractRegion) = pc.energy < minE
     trajectory(eval, p, reg, mat, scf, term)
+end
+
+
+# SINGLE FUNCTIONS TO TEST RANDOM PATH LENGTHS
+
+# This isn't working... why?
+# It does all iterations within the region volume, and the regular trajectory function does not, even though nothing is different between them  
+function trajectory_rand_path_check(
+    eval::Function,
+    p::T,
+    reg::AbstractRegion,
+    #total_path_length_vector::Vector{Float64},
+    #scatter_angle_vector::Vector{Float64},
+    scf::Function,
+    terminate::Function,
+) where {T<:Particle}
+    (pc, nextr) = (p, childmost_region(reg, position(p)))
+    θ, ϕ = 0.0, 0.0
+    total_path_length = 0
+    while (!terminate(pc, reg)) && isinside(reg.shape, position(pc)) # isinside function also breaks it?!
+        prevr = nextr
+        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material) 
+        (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ) 
+        total_path_length += λ
+        if !scatter 
+            (θ, ϕ) = (0.0,0.0)
+        else
+            (θ, ϕ) = (θₙ, ϕₙ) 
+            #append!(total_path_length_vector, total_path_length)
+            #append!(scatter_angle_vector, θₙ)
+            #total_path_length = 0
+            break
+        end
+        eval(pc, prevr)
+    end
+    return total_path_length, θ
+end
+
+function trajectory_rand_path_check(
+    eval::Function,
+    p::T,
+    reg::AbstractRegion,
+    #tplv::Vector{Float64},
+    #sav::Vector{Float64},
+    scf::Function = (t::T, mat::Material) -> transport(t, mat); 
+    minE::Float64 = 50.0,
+) where {T<:Particle}
+    term(pc::T, _::AbstractRegion) = pc.energy < minE
+    #trajectory_rand_path_check(eval, p, reg, tplv, sav, scf, term)
+    trajectory_rand_path_check(eval, p, reg, scf, term)
+end
+
+# PARAMETRIC
+
+function trajectory_rand_path_check(
+    eval::Function,
+    p::T,
+    reg::AbstractRegion,
+    mat::ParametricMaterial,
+    #total_path_length_vector::Vector{Float64},
+    #scatter_angle_vector::Vector{Float64},
+    scf::Function,
+    terminate::Function,
+) where {T<:Particle}
+    (pc, nextr) = (p, childmost_region(reg, position(p)))
+    θ, ϕ = 0.0, 0.0
+    total_path_length = 0
+    while (!terminate(pc, reg)) && isinside(reg.shape, position(pc)) 
+        prevr = nextr
+        (λ, θₙ, ϕₙ, ΔZ) = scf(pc, mat, 4) 
+        (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
+        total_path_length += λ
+        if !scatter 
+            (θ, ϕ) = (0.0,0.0)
+        else
+            (θ, ϕ) = (θₙ, ϕₙ) 
+            #append!(total_path_length_vector, total_path_length)
+            #append!(scatter_angle_vector, θₙ)
+            #total_path_length = 0
+            break
+        end
+        eval(pc, prevr)
+    end
+    return total_path_length, θ
+end
+
+function trajectory_rand_path_check(
+    eval::Function,
+    p::T,
+    reg::AbstractRegion,
+    mat::ParametricMaterial,
+    #tplv::Vector{Float64},
+    #sav::Vector{Float64},
+    scf::Function = (t::T, mat::ParametricMaterial, num_it::Int) -> transport(t, mat, 4); # Adjusted the function definition to include θ, ϕ
+    minE::Float64 = 50.0,
+) where {T<:Particle}
+    term(pc::T, _::AbstractRegion) = pc.energy < minE
+    #trajectory_rand_path_check(eval, p, reg, mat, tplv, sav, scf, term)
+    trajectory_rand_path_check(eval, p, reg, mat, scf, term)
 end
