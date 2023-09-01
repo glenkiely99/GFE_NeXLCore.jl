@@ -251,17 +251,22 @@ function intersection( # how to make this more efficient?
     _between(a, b, c) =  b < a < c #(a > b) && (a < c)
     t = Inf64
     i, j, k = vx.index
+    #println("Index after mfp?!")
+    #println(vx.index)
     #corner1, corner2 = vx.parent.nodes[i,j,k], vx.parent.nodes[i+1,j+1,k+1] # is this correct?
     corner1, corner2 = nodes(vx.parent, i,j,k), nodes(vx.parent, i+1,j+1,k+1) # is this correct?
     for i in eachindex(pos1)
         j, k = i % 3 + 1, (i + 1) % 3 + 1
         if pos2[i] != pos1[i]
             u = (corner1[i] - pos1[i]) / (pos2[i] - pos1[i])
-            if (u > 0.0) && (u <= t)
+            if (u > 0.0) && (u <= t) && _between(pos1[j] + u * (pos2[j] - pos1[j]), corner1[j], corner2[j]) && # 
+                _between(pos1[k] + u * (pos2[k] - pos1[k]), corner1[k], corner2[k])
                 t = u
             end
             u = (corner2[i] - pos1[i]) / (pos2[i] - pos1[i])
-            if (u > 0.0) && (u <= t)
+            if (u > 0.0) && (u <= t)  && #
+                _between(pos1[j] + u * (pos2[j] - pos1[j]), corner1[j], corner2[j]) && # 
+                _between(pos1[k] + u * (pos2[k] - pos1[k]), corner1[k], corner2[k])
                 t = u
             end
         end
@@ -479,16 +484,16 @@ function take_step(
         intersection(reg.shape, newP),
         (intersection(ch.shape, newP) for ch in reg.children)...,
     )
-    scatter = t > 1.0
-    if !scatter
+    scatter = t > 1.0 
+    if !scatter 
         newP = T(p, (t + ϵ) * 𝜆, 𝜃, 𝜑, (t + ϵ) * ΔE)
         if isa(nextReg, Voxel)
-            voxel_idxs = find_voxel_by_position(nextReg.parent, position(newP))
+            voxel_idxs = find_voxel_by_position(nextReg.parent, position(newP)) 
             if all(1 .<= voxel_idxs .<= nextReg.parent.num_voxels)
                 nextReg = nextReg.parent.voxels[voxel_idxs...] 
             else
                 vr = nextReg.parent
-                nextReg = childmost_region(isnothing(vr.parent) ? nothing : vr.parent, position(newP)) #could return nothing
+                nextReg = childmost_region(isnothing(vr.parent) ? nothing : vr.parent, position(newP)) 
             end
         end
     end
@@ -511,7 +516,7 @@ function take_step(
     end
     regv = reg.voxels[voxel_idxs...]
     regv=reg
-    take_step(p, regv, 𝜆, 𝜃, 𝜑, ΔE, ϵ)
+    take_step(p, regv, 𝜆, 𝜃, 𝜑, ΔE, ϵ) 
 end
 
 
@@ -586,53 +591,40 @@ function trajectory(
     trajectory(eval, p, reg, mat, scf, term)
 end
 
-
 # SINGLE FUNCTIONS TO TEST RANDOM PATH LENGTHS
 
-# This isn't working... why?
-# It does all iterations within the region volume, and the regular trajectory function does not, even though nothing is different between them  
 function trajectory_rand_path_check(
     eval::Function,
     p::T,
     reg::AbstractRegion,
-    #total_path_length_vector::Vector{Float64},
-    #scatter_angle_vector::Vector{Float64},
     scf::Function,
     terminate::Function,
 ) where {T<:Particle}
     (pc, nextr) = (p, childmost_region(reg, position(p)))
     θ, ϕ = 0.0, 0.0
-    total_path_length = 0
     while (!terminate(pc, reg)) && isinside(reg.shape, position(pc)) # isinside function also breaks it?!
         prevr = nextr
         (λ, θₙ, ϕₙ, ΔZ) = scf(pc, nextr.material) 
         (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ) 
-        total_path_length += λ
         if !scatter 
             (θ, ϕ) = (0.0,0.0)
         else
             (θ, ϕ) = (θₙ, ϕₙ) 
-            #append!(total_path_length_vector, total_path_length)
-            #append!(scatter_angle_vector, θₙ)
-            #total_path_length = 0
             break
         end
         eval(pc, prevr)
     end
-    return total_path_length, θ
+    return position(pc), θ
 end
 
 function trajectory_rand_path_check(
     eval::Function,
     p::T,
     reg::AbstractRegion,
-    #tplv::Vector{Float64},
-    #sav::Vector{Float64},
     scf::Function = (t::T, mat::Material) -> transport(t, mat); 
     minE::Float64 = 50.0,
 ) where {T<:Particle}
     term(pc::T, _::AbstractRegion) = pc.energy < minE
-    #trajectory_rand_path_check(eval, p, reg, tplv, sav, scf, term)
     trajectory_rand_path_check(eval, p, reg, scf, term)
 end
 
@@ -643,31 +635,24 @@ function trajectory_rand_path_check(
     p::T,
     reg::AbstractRegion,
     mat::ParametricMaterial,
-    #total_path_length_vector::Vector{Float64},
-    #scatter_angle_vector::Vector{Float64},
     scf::Function,
     terminate::Function,
 ) where {T<:Particle}
     (pc, nextr) = (p, childmost_region(reg, position(p)))
     θ, ϕ = 0.0, 0.0
-    total_path_length = 0
     while (!terminate(pc, reg)) && isinside(reg.shape, position(pc)) 
         prevr = nextr
         (λ, θₙ, ϕₙ, ΔZ) = scf(pc, mat, 4) 
         (pc, nextr, scatter) = take_step(pc, nextr, λ, θ, ϕ, ΔZ)
-        total_path_length += λ
         if !scatter 
             (θ, ϕ) = (0.0,0.0)
         else
             (θ, ϕ) = (θₙ, ϕₙ) 
-            #append!(total_path_length_vector, total_path_length)
-            #append!(scatter_angle_vector, θₙ)
-            #total_path_length = 0
             break
         end
         eval(pc, prevr)
     end
-    return total_path_length, θ
+    return position(pc), θ
 end
 
 function trajectory_rand_path_check(
@@ -675,12 +660,9 @@ function trajectory_rand_path_check(
     p::T,
     reg::AbstractRegion,
     mat::ParametricMaterial,
-    #tplv::Vector{Float64},
-    #sav::Vector{Float64},
     scf::Function = (t::T, mat::ParametricMaterial, num_it::Int) -> transport(t, mat, 4); # Adjusted the function definition to include θ, ϕ
     minE::Float64 = 50.0,
 ) where {T<:Particle}
     term(pc::T, _::AbstractRegion) = pc.energy < minE
-    #trajectory_rand_path_check(eval, p, reg, mat, tplv, sav, scf, term)
     trajectory_rand_path_check(eval, p, reg, mat, scf, term)
 end
