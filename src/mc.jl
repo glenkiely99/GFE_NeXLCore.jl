@@ -660,7 +660,7 @@ function trajectory_rand_path_check(
     p::T,
     reg::AbstractRegion,
     mat::ParametricMaterial,
-    scf::Function = (t::T, mat::ParametricMaterial, num_it::Int) -> transport(t, mat, 4); # Adjusted the function definition to include θ, ϕ
+    scf::Function = (t::T, mat::ParametricMaterial, num_it::Int) -> transport(t, mat, 4); 
     minE::Float64 = 50.0,
 ) where {T<:Particle}
     term(pc::T, _::AbstractRegion) = pc.energy < minE

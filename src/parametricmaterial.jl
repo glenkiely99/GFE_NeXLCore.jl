@@ -1,4 +1,41 @@
 using StaticArrays
+using DataStructures
+
+struct CSData
+    values::SVector{606, Float64} # 606 values for angles and probabilities
+end
+
+# Creates a dictionary of static vectors containing the probabilities of angles
+function loaddata(filename::String)
+    data = Dict{Float64, CSData}()
+    open(filename, "r") do f
+        energy = 0.0
+        values = Float64[]
+        while !eof(f) # read through the file
+            line = readline(f)
+            if startswith(line, "-1")  
+                if !isempty(values)
+                    data[energy] = CSData(values)
+                    values = Float64[]
+                end
+                parts = split(line)
+                energy = parse(Float64, parts[3])
+            else
+                append!(values, parse.(Float64, split(line)))
+            end
+        end
+        if !isempty(values)
+            data[energy] = CSData(values)
+        end
+    end
+    return data
+end
+
+parametricDD = DefaultDict{Element, CSData}(passkey=true) do elm
+    filename = @sprintf("../data/elsepafiles/eeldx%03d.p08", elm.number)
+    println("Reading and caching file: $filename")
+    loaddata(filename)
+end
 
 function volume_conserving_density(elms::SVector{N, Element}) where N
     ρ_pure = SVector{N, Float64}(density.(elms))
@@ -56,6 +93,7 @@ struct ParametricMaterial{T<:AbstractFloat, N}
         elms::AbstractVector{Element},
         massfracfunc!::Function,
         atomicweights::Union{AbstractArray{T}, Nothing}=nothing,
+        δσδΩgrid::Dict{Float64, CSData},
         ρ::Union{Nothing, Function}=nothing,
         properties::AbstractDict{Symbol,Any}=Dict{Symbol,Any}(),
     ) where {T<:AbstractFloat}
@@ -67,6 +105,10 @@ struct ParametricMaterial{T<:AbstractFloat, N}
         end
         if isnothing(atomicweights)
             atomicweights = a.(elms)
+        end
+        # below is for finding the files for probabilities at given energies
+        for elm in elms
+            δσδΩgrid = parametricDD[elm]
         end
         atomicweights = SVector{N, T}(atomicweights)
         new{T,N}(name, elms, massfrac, massfracfunc!, atomicweights, ρ, properties)
