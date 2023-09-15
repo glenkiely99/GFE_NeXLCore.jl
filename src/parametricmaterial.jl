@@ -93,7 +93,6 @@ struct ParametricMaterial{T<:AbstractFloat, N}
         elms::AbstractVector{Element},
         massfracfunc!::Function,
         atomicweights::Union{AbstractArray{T}, Nothing}=nothing,
-        δσδΩgrid::Dict{Float64, CSData},
         ρ::Union{Nothing, Function}=nothing,
         properties::AbstractDict{Symbol,Any}=Dict{Symbol,Any}(),
     ) where {T<:AbstractFloat}
@@ -108,7 +107,7 @@ struct ParametricMaterial{T<:AbstractFloat, N}
         end
         # below is for finding the files for probabilities at given energies
         for elm in elms
-            δσδΩgrid = parametricDD[elm]
+            parametricDD[elm]
         end
         atomicweights = SVector{N, T}(atomicweights)
         new{T,N}(name, elms, massfrac, massfracfunc!, atomicweights, ρ, properties)
