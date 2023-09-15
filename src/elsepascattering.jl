@@ -127,13 +127,13 @@ function interpolateE(E)
     if rand() < (log(E) - log(energies[i-1])) / (log(energies[i]) - log(energies[i-1])) #loglog interpolate
         return energies[i-1]
     else
-        return energies[i]
+        return i, energies[i]
     end
 end
 
 function δσδΩ(::Type{ELSEPAScatteringCrossSection}, θ::Float64, elm::Element, E::Float64)::Float64
-    energy = interpolateE(ELSEPAScatteringCrossSection, E)
-    probgrid = parametricDD[elm][energy] # returns static vector of probabilities 
+    i, - = interpolateE(ELSEPAScatteringCrossSection, E)
+    probgrid = parametricDD[elm][i] # query static vector index to return static vector of probabilities 
 end
 
 

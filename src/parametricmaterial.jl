@@ -7,7 +7,7 @@ end
 
 # Creates a dictionary of static vectors containing the probabilities of angles
 function loaddata(filename::String)
-    data = Dict{Float64, CSData}()
+    data = SVector{CSData}()
     open(filename, "r") do f
         energy = 0.0
         values = Float64[]
@@ -25,7 +25,7 @@ function loaddata(filename::String)
             end
         end
         if !isempty(values)
-            data[energy] = CSData(values)
+            append!(data,CSData(values))
         end
     end
     return data
