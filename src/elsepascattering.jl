@@ -122,10 +122,10 @@ end
 function interpolateE(E)
     i = bSearch(E)
     if i == 1 # to account for i being the first energy
-        return energies[1]
+        return 1, energies[1]
     end
     if rand() < (log(E) - log(energies[i-1])) / (log(energies[i]) - log(energies[i-1])) #loglog interpolate
-        return energies[i-1]
+        return i-1, energies[i-1]
     else
         return i, energies[i]
     end
