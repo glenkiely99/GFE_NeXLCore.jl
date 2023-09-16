@@ -172,9 +172,10 @@ struct VoseAlias
     prob::Vector{Float64}
 end
 
-function VoseAlias(prob::AbstractVector{Float64})
-    n = length(prob)
-    scaled_prob = prob .* n
+function VoseAlias(prob::CSData)
+    n = length(prob.values)
+    println(n) # have to normalise them! 
+    scaled_prob = prob.values .* n
     small = []
     large = []
     alias = zeros(Int, n)
@@ -209,7 +210,7 @@ function draw_sample(va::VoseAlias)
 end
 
 function δσδΩ(::Type{ELSEPAScatteringCrossSection}, θ::Float64, elm::Element, E::Float64)::Float64
-    i, - = interpolateE(ELSEPAScatteringCrossSection, E)
+    i, - = interpolateE(E)
     probgrid = parametricDD[elm][i] # query vector index to return static vector of probabilities 
     va = VoseAlias(probgrid)
     angle_sample = anglegrid[draw_sample(va)]
