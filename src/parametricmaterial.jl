@@ -6,6 +6,8 @@ struct CSData
     values::Vector{Float64} # SVector{606, Float64} 606 values for angles and probabilities
 end
 
+Base.length(data::CSData) = length(data.values)
+
 # Creates a dictionary of static vectors containing the probabilities of angles
 function loaddata(filename::String)
     data = Vector{CSData}()
@@ -17,7 +19,8 @@ function loaddata(filename::String)
             parts = split(strip(line))
             if parse(Float64, parts[1]) == -1.0
                 if !isempty(values)
-                    push!(data, CSData(values)) 
+                    total = sum(values) # integral for probs
+                    push!(data, CSData(values ./ total)) 
                     values = Float64[]
                 end
                 energy = parse(Float64, parts[3])
@@ -26,7 +29,8 @@ function loaddata(filename::String)
             end
         end
         if !isempty(values) # last values after loop! 
-            push!(data, CSData(values))
+            total = sum(values) # integral for probs
+            push!(data, CSData(values ./ total))
         end
     end
     return data
