@@ -1,41 +1,43 @@
 using StaticArrays
 using DataStructures
+using Printf
 
 struct CSData
-    values::SVector{606, Float64} # 606 values for angles and probabilities
+    values::Vector{Float64} # SVector{606, Float64} 606 values for angles and probabilities
 end
 
 # Creates a dictionary of static vectors containing the probabilities of angles
 function loaddata(filename::String)
-    data = SVector{CSData}()
+    data = Vector{CSData}()
     open(filename, "r") do f
         energy = 0.0
         values = Float64[]
         while !eof(f) # read through the file
             line = readline(f)
-            if startswith(line, "-1")  
+            parts = split(strip(line))
+            if parse(Float64, parts[1]) == -1.0
                 if !isempty(values)
-                    data[energy] = CSData(values)
+                    push!(data, CSData(values)) 
                     values = Float64[]
                 end
-                parts = split(line)
                 energy = parse(Float64, parts[3])
             else
                 append!(values, parse.(Float64, split(line)))
             end
         end
-        if !isempty(values)
-            append!(data,CSData(values))
+        if !isempty(values) # last values after loop! 
+            push!(data, CSData(values))
         end
     end
     return data
 end
 
-parametricDD = DefaultDict{Element, CSData}(passkey=true) do elm
+parametricDD = DefaultDict{Element, Vector{CSData}}(passkey=true) do elm
     filename = @sprintf("../data/elsepafiles/eeldx%03d.p08", elm.number)
     println("Reading and caching file: $filename")
     loaddata(filename)
 end
+
 
 function volume_conserving_density(elms::SVector{N, Element}) where N
     ρ_pure = SVector{N, Float64}(density.(elms))

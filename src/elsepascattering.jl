@@ -106,37 +106,6 @@ const energies = [
 ] # eV
 # energies taken from the first eeldx file! 
 
-function bSearch(E)
-    low, high = 1, length(energies)
-    while low <= high
-        middle = div(low + high, 2)
-        if energies[middle] < E
-            low = middle + 1
-        else
-            high = middle - 1
-        end
-    end
-    return low
-end
-
-function interpolateE(E)
-    i = bSearch(E)
-    if i == 1 # to account for i being the first energy
-        return 1, energies[1]
-    end
-    if rand() < (log(E) - log(energies[i-1])) / (log(energies[i]) - log(energies[i-1])) #loglog interpolate
-        return i-1, energies[i-1]
-    else
-        return i, energies[i]
-    end
-end
-
-function δσδΩ(::Type{ELSEPAScatteringCrossSection}, θ::Float64, elm::Element, E::Float64)::Float64
-    i, - = interpolateE(ELSEPAScatteringCrossSection, E)
-    probgrid = parametricDD[elm][i] # query static vector index to return static vector of probabilities 
-end
-
-
 """
 Generates grid of 606 angles between 0 and 180 degrees
 """
@@ -168,6 +137,81 @@ function elsepa_angles()
 
         end
     end
-
-    return res
+    return SVector{length(res), Float64}(res...)
 end
+
+const anglegrid = elsepa_angles()
+
+function bSearch(E)
+    low, high = 1, length(energies)
+    while low <= high
+        middle = div(low + high, 2)
+        if energies[middle] < E
+            low = middle + 1
+        else
+            high = middle - 1
+        end
+    end
+    return low
+end
+
+function interpolateE(E)
+    i = bSearch(E)
+    if i == 1 # to account for i being the first energy
+        return 1, energies[1]
+    end
+    if rand() < (log(E) - log(energies[i-1])) / (log(energies[i]) - log(energies[i-1])) #loglog interpolate
+        return i-1, energies[i-1]
+    else
+        return i, energies[i]
+    end
+end
+
+struct VoseAlias
+    alias::Vector{Int}
+    prob::Vector{Float64}
+end
+
+function VoseAlias(prob::AbstractVector{Float64})
+    n = length(prob)
+    scaled_prob = prob .* n
+    small = []
+    large = []
+    alias = zeros(Int, n)
+    for (i, p) in enumerate(scaled_prob)
+        if p < 1.0
+            push!(small, i)
+        else
+            push!(large, i)
+        end
+    end
+    while !isempty(small) && !isempty(large)
+        l, g = pop!(small), pop!(large)
+        alias[l] = g
+        scaled_prob[g] -= (1.0 - scaled_prob[l])
+        if scaled_prob[g] < 1.0
+            push!(small, g)
+        else
+            push!(large, g)
+        end
+    end
+    return VoseAlias(alias, scaled_prob)
+end
+
+function draw_sample(va::VoseAlias)
+    n = length(va.prob)
+    i = rand(1:n)
+    if rand() < va.prob[i]
+        return i
+    else
+        return va.alias[i]
+    end
+end
+
+function δσδΩ(::Type{ELSEPAScatteringCrossSection}, θ::Float64, elm::Element, E::Float64)::Float64
+    i, - = interpolateE(ELSEPAScatteringCrossSection, E)
+    probgrid = parametricDD[elm][i] # query vector index to return static vector of probabilities 
+    va = VoseAlias(probgrid)
+    angle_sample = anglegrid[draw_sample(va)]
+end
+
