@@ -1,5 +1,67 @@
 using Dierckx
 using QuadGK
+#using Logging
+
+ecs_energies = [
+    5.00e+01, 6.00e+01, 7.00e+01, 8.00e+01, 9.00e+01, 1.00e+02, 1.25e+02, 1.50e+02, 1.75e+02, 2.00e+02,
+    2.50e+02, 3.00e+02, 3.50e+02, 4.00e+02, 4.50e+02, 5.00e+02, 6.00e+02, 7.00e+02, 8.00e+02, 9.00e+02,
+    1.00e+03, 1.25e+03, 1.50e+03, 1.75e+03, 2.00e+03, 2.50e+03, 3.00e+03, 3.50e+03, 4.00e+03, 4.50e+03,
+    5.00e+03, 6.00e+03, 7.00e+03, 8.00e+03, 9.00e+03, 1.00e+04, 1.25e+04, 1.50e+04, 1.75e+04, 2.00e+04,
+    2.50e+04, 3.00e+04, 3.50e+04, 4.00e+04, 4.50e+04, 5.00e+04, 6.00e+04, 7.00e+04, 8.00e+04, 9.00e+04,
+    1.00e+05, 1.25e+05, 1.50e+05, 1.75e+05, 2.00e+05, 2.50e+05, 3.00e+05, 3.50e+05, 4.00e+05, 4.50e+05,
+    5.00e+05, 6.00e+05, 7.00e+05, 8.00e+05, 9.00e+05, 1.00e+06, 1.25e+06, 1.50e+06, 1.75e+06, 2.00e+06,
+    2.50e+06, 3.00e+06, 3.50e+06, 4.00e+06, 4.50e+06, 5.00e+06, 6.00e+06, 7.00e+06, 8.00e+06, 9.00e+06,
+    1.00e+07, 1.25e+07, 1.50e+07, 1.75e+07, 2.00e+07, 2.50e+07, 3.00e+07, 3.50e+07, 4.00e+07, 4.50e+07,
+    5.00e+07, 6.00e+07, 7.00e+07, 8.00e+07, 9.00e+07, 1.00e+08
+]
+
+#function linspace(lb, rb, n::Integer)
+#    h = (rb .- lb) ./ (n-1)
+##    return [lb .+ i*h for i in 0:(n-1)]
+#end
+
+"""
+    linspace(lb, rb, n::Integer)
+    
+Logarithmically spaced `n` points between `lb` and `rb`
+"""
+#logspace(lb, rb, n::Integer) = exp.(linspace(log.(lb), log.(rb), n))
+
+export_ecs_energies = logspace(50.0, 1e5, 200)
+#log_export_ecs_energies = log.(export_ecs_energies)
+
+function elsepa_angles()
+    res = Vector{Float64}()
+    push!(res, 0.0)
+    push!(res, 1e-4)
+    while res[end] < 180
+        if res[end] < 0.9999e-3
+            push!(res, res[end] + 2.5e-5)
+
+        elseif res[end] < 0.9999e-2
+            push!(res, res[end] + 2.5e-4)
+
+        elseif res[end] < 0.9999e-1
+            push!(res, res[end] + 2.5e-3)
+
+        elseif res[end] < 0.9999e+0
+            push!(res, res[end] + 2.5e-2)
+
+        elseif res[end] < 0.9999e+1
+            push!(res, res[end] + 1.0e-1)
+
+        elseif res[end] < 2.4999e+1
+            push!(res, res[end] + 2.5e-1)
+
+        else
+            push!(res, res[end] + 5.0e-1)
+
+        end
+    end
+    return SVector{length(res), Float64}(res...)
+end
+
+const anglegrid = elsepa_angles()
 
 """
     a₀ : Bohr radius (in cm)
@@ -48,6 +110,12 @@ Appl. Phys. Lett. 58, 2845 (1991); https://doi.org/10.1063/1.104754
 """
 struct Browning1991 <: ScreenedRutherfordType end
 
+"""
+ELSEPA Angles
+"""
+abstract type ELSEPAType <: ElasticScatteringCrossSection end
+
+struct ELSEPA <: ELSEPAType end
 
 """
     ξ(::Type{<:ScreenedRutherfordType}, elm::Element, E::Float64)::Float64 
@@ -163,6 +231,10 @@ end
 function σₜ(::Type{Liljequist1989}, elm::Element, E::Float64)
     return σₜ(ScreenedRutherford, elm, E) / LiljequistCorrection[z(elm)](E)
 end 
+function σₜ(::Type{ELSEPA}, elm::Element, E::Float64)
+    ϵv = ϵ(ScreenedRutherford, elm, E)
+    return ξ(ScreenedRutherford, elm, E) * (2.0 * ϵv^2 / (2.0 * ϵv + 1.0))
+end
 
 # Vectorised form of everything
 function σₜ(::Type{ScreenedRutherford},  elm::Vector{Element}, E::Vector{Float64})
@@ -197,6 +269,12 @@ function σₜ_all(ty::Type{<:ScreenedRutherfordType}, mat::ParametricMaterial, 
 end
 
 σₜ(ty::Type{<:ScreenedRutherfordType}, mat::ParametricMaterial, E::Real) = sum(σₜ_all(ty, mat, E))
+
+function σₜ_all(ty::Type{<:ELSEPAType}, mat::ParametricMaterial, E::Float64)
+    return [σₜ(ty, elm, E) * atoms_per_g(elm) * mat.massfrac[i] * density(mat) for (i, elm) in enumerate(mat.elms)]
+end
+
+σₜ(ty::Type{<:ELSEPAType}, mat::ParametricMaterial, E::Real) = sum(σₜ_all(ty, mat, E))
 
 
 """
@@ -248,6 +326,14 @@ function λ(ty::Type{<:ScreenedRutherfordType}, mfp::Float64, mat::ParametricMat
     σ_tot = sum(σₜ(ty, elm, E) * (atoms_per_g(elm) * mat.massfrac[i] * density(mat)) for (i, elm) in enumerate(mat.elms))
     return 1. / σ_tot
 end
+function λ(ty::Type{<:ELSEPAType}, mfp::Float64, mat::ParametricMaterial, θ′::Float64, ϕ′::Float64, pc::Electron, E::Float64)
+    pos = position(Electron(pc, mfp, θ′, ϕ′, E)) #ToDo: Optimise this
+    c = massfractions(mat, pos)
+    ρ = density(mat)
+    #N = atoms_per_cm³(mat::ParametricMaterial)
+    σ_tot = sum(σₜ(ty, elm, E) * (atoms_per_g(elm) * mat.massfrac[i] * density(mat)) for (i, elm) in enumerate(mat.elms))
+    return 1. / σ_tot
+end
 function λ(ty::Type{<:ScreenedRutherfordType}, pos::AbstractVector, mat::ParametricMaterial, E::Float64)
     c = massfractions(mat, pos)
     ρ = density(mat)
@@ -255,7 +341,44 @@ function λ(ty::Type{<:ScreenedRutherfordType}, pos::AbstractVector, mat::Parame
     σ_tot = sum(σₜ(ty, elm, E) * (atoms_per_g(elm) * mat.massfrac[i] * density(mat)) for (i, elm) in enumerate(mat.elms))
     return 1. / σ_tot
 end
+function λ(ty::Type{<:ELSEPAType}, pos::AbstractVector, mat::ParametricMaterial, E::Float64)
+    c = massfractions(mat, pos)
+    ρ = density(mat)
+    #N = atoms_per_cm³(mat::ParametricMaterial)
+    σ_tot = sum(σₜ(ty, elm, E) * (atoms_per_g(elm) * mat.massfrac[i] * density(mat)) for (i, elm) in enumerate(mat.elms))
+    return 1. / σ_tot
+end
 
+"""
+    interpolateE(E)
+ Logarithmically interpolates energies.
+"""
+function interpolateE(E)
+    i = searchsortedfirst(export_ecs_energies, E)
+    if i == 1 # to account for i being the first energy
+        return 1, export_ecs_energies[1]
+    end
+    if rand() < (log(E) - log(export_ecs_energies[i-1])) / (log(export_ecs_energies[i]) - log(export_ecs_energies[i-1])) #loglog interpolate
+        return i-1, export_ecs_energies[i-1]
+    else
+        return i, export_ecs_energies[i]
+    end
+end
+
+"""
+    draw_sample(va::VoseAlias)
+
+ Draws a sample from the alias table.
+"""
+function draw_sample(va::VoseAlias)
+    n = length(va.prob)
+    i = rand(1:n)
+    if rand() < va.prob[i]
+        return i
+    else
+        return va.alias[i]
+    end
+end
 
 """
     Base.rand(ty::Type{<:ScreenedRutherfordType}, mat::Material, E::Float64)::NTuple{3, Float64}
@@ -302,7 +425,45 @@ function Base.rand(
     if elm′ == elements[119]
         elm′ = mat.elms[end]
     end
-    θ = rand(ty, elm′, E)
+    indexval, ene = interpolateE(E)
+    θ = anglegrid[draw_sample(parametricDD[elm′][indexval])]
+    #θ = rand(ty, elm′, E)
+    ϕ = 2.0 * π * rand()
+
+    r = log(rand())
+    λ′ = -λ(ty, position(pc), mat, E) * r
+    for i in 1:num_iterations
+        integral, error = quadgk(x -> λ(ty, x, mat, θ, ϕ, pc, E), 0, λ′)
+        λ′ = - (integral / λ′) * r
+    end
+    massfractions(mat, position(Electron(pc, λ′, θ, ϕ, 0.0)))
+    #@assert elm′ != elements[119] "Are there any elements in $mat_at_pos?  Is the density ($(mat_at_pos[:Density])) too low?"
+    return (λ′, θ, ϕ)
+end
+
+function Base.rand(
+    ty::Type{<:ELSEPAType},
+    pc::Electron,
+    mat::ParametricMaterial, #Material is a function
+    E::Float64,
+    num_iterations::Int
+    )::NTuple{3,Float64}
+    elm′, λ′ = elements[119], 1.0e308
+    σ_arr = σₜ_all(ty, mat, E)
+    σ_tot = sum(σ_arr) 
+    rval = rand() * σ_tot
+    for (elm, sigma_val) in zip(mat.elms, σ_arr)
+        rval -= sigma_val
+        if rval ≤ 0
+            elm′ = elm
+            break
+        end
+    end
+    if elm′ == elements[119]
+        elm′ = mat.elms[end]
+    end
+    indexval, ene = interpolateE(E)
+    θ = anglegrid[draw_sample(parametricDD[elm′][indexval])]
     ϕ = 2.0 * π * rand()
 
     r = log(rand())

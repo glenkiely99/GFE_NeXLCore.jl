@@ -1,10 +1,11 @@
 using StaticArrays
+using NeXLCore : ElasticScatteringCrossSection
 """
 Alias table method for finding the appropriate scattering angle. 
 """
-abstract type ELSEPAScatteringCrossSectionType <: ElasticScatteringCrossSection end
+abstract type ELSEPAScatteringType <: ElasticScatteringCrossSection end
 
-struct ELSEPAScatteringCrossSection <: ELSEPAScatteringCrossSectionType end
+struct ELSEPAScattering <: ELSEPAScatteringCrossSectionType end
 
 const energies = [
     5.000E+01,
@@ -195,7 +196,7 @@ function VoseAlias(prob::CSData) # actually prob data
             push!(large, g)
         end
     end
-    return VoseAlias(alias, scaled_prob)
+    return VoseAlias(alias, scaled_prob) #rescales prob each time also larger than 1 due to numerical
 end
 
 function draw_sample(va::VoseAlias)
@@ -208,7 +209,9 @@ function draw_sample(va::VoseAlias)
     end
 end
 
-function δσδΩ(::Type{ELSEPAScatteringCrossSection}, θ::Float64, elm::Element, E::Float64)::Float64
+aliasprob = DefaultDict{}
+
+function NeXLCore.δσδΩ(::Type{ELSEPAScatteringCrossSection}, θ::Float64, elm::Element, E::Float64)::Float64
     i, ene = interpolateE(E)
     probgrid = parametricDD[elm][i] # query vector index to return vector of probabilities 
     va = VoseAlias(probgrid)

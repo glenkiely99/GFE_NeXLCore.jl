@@ -190,6 +190,24 @@ function transport( #should work with parametric material now - Glen
     end
     return (𝜆′, θ′, ϕ′, 𝜆′ * stopval)
 end
+#
+#function transport( #ELSEPA angles!
+#    pc::Electron,
+#    mat::ParametricMaterial,
+#    num_iterations::Int,
+#    ecx::Type{<:ElasticScatteringCrossSection} = ELSEPA,
+#    bethe::Type{<:BetheEnergyLoss} = JoyLuo
+#)::NTuple{4,Float64}
+#    (𝜆′, θ′, ϕ′) = rand(ecx, pc, mat, pc.energy, num_iterations) 
+#    stopval = dEds(bethe, pc.energy, position(pc), mat)
+#    for i in 1:num_iterations
+#        integral, error = quadgk(x -> dEds(bethe, pc.energy, mat, x, θ′, ϕ′, pc), 0, 𝜆′)
+#        stopping_val = integral / stopval 
+#        stopval = stopping_val
+#    end
+#    return (𝜆′, θ′, ϕ′, 𝜆′ * stopval)
+#end
+#
 
 """
     pathlength(el::Particle)
