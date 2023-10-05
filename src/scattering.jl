@@ -110,13 +110,14 @@ Appl. Phys. Lett. 58, 2845 (1991); https://doi.org/10.1063/1.104754
 """
 struct Browning1991 <: ScreenedRutherfordType end
 
+#=
 """
 ELSEPA Angles
 """
 abstract type ELSEPAType <: ElasticScatteringCrossSection end
 
 struct ELSEPA <: ELSEPAType end
-
+=#
 """
     ξ(::Type{<:ScreenedRutherfordType}, elm::Element, E::Float64)::Float64 
 
@@ -126,10 +127,6 @@ function ξ(::Type{<:ScreenedRutherfordType}, elm::Element, E::Float64)::Float64
     Rₑ, mc² = ustrip((PlanckConstant * SpeedOfLightInVacuum * RydbergConstant) |> u"eV"), ustrip(ElectronMass * SpeedOfLightInVacuum^2 |> u"eV")
     return 0.5 * π * a₀^2 * (4.0 * z(elm) * ((E + mc²) / (E + 2.0 * mc²)) * (Rₑ / E))^2 # As corrected in Liljequist1989
 end 
-function ξ(::Type{<:ScreenedRutherfordType}, elm::Vector{Element}, E::Vector{Float64})::Vector{Float64}
-    Rₑ, mc² = ustrip((PlanckConstant * SpeedOfLightInVacuum * RydbergConstant) |> u"eV"), ustrip(ElectronMass * SpeedOfLightInVacuum^2 |> u"eV")
-    return 0.5 * π * a₀^2 * (4.0 .* z.(elm) .* ((E .+ mc²) ./ (E .+ 2.0 .* mc²)) .* (Rₑ ./ E)).^2 # As corrected in Liljequist1989
-end
 
 """
     ϵ(elm::Element, E::Float64)
@@ -137,7 +134,6 @@ end
 Screening factor.
 """
 ϵ(::Type{<:ScreenedRutherfordType}, elm::Element, E::Float64) = 2.0 * (kₑ(E) * Rₐ(elm))^2
-ϵ(::Type{<:ScreenedRutherfordType}, elm::Vector{Element}, E::Vector{Float64}) = 2.0 * (kₑ(E) .* Rₐ(elm))^2
 #kₑ just gives e wavenumber ß need to input vector of Es to this 
 # Glen - need to implement this continuously
 
@@ -231,10 +227,12 @@ end
 function σₜ(::Type{Liljequist1989}, elm::Element, E::Float64)
     return σₜ(ScreenedRutherford, elm, E) / LiljequistCorrection[z(elm)](E)
 end 
-function σₜ(::Type{ELSEPA}, elm::Element, E::Float64)
+#=
+function σₜ(::Type{ELSEPAType}, elm::Element, E::Float64)
     ϵv = ϵ(ScreenedRutherford, elm, E)
     return ξ(ScreenedRutherford, elm, E) * (2.0 * ϵv^2 / (2.0 * ϵv + 1.0))
 end
+=#
 
 # Vectorised form of everything
 function σₜ(::Type{ScreenedRutherford},  elm::Vector{Element}, E::Vector{Float64})
@@ -268,14 +266,15 @@ function σₜ_all(ty::Type{<:ScreenedRutherfordType}, mat::ParametricMaterial, 
     return [σₜ(ty, elm, E) * atoms_per_g(elm) * mat.massfrac[i] * density(mat) for (i, elm) in enumerate(mat.elms)]
 end
 
-σₜ(ty::Type{<:ScreenedRutherfordType}, mat::ParametricMaterial, E::Real) = sum(σₜ_all(ty, mat, E))
+σₜ(ty::Type{<:ScreenedRutherfordType}, mat::ParametricMaterial, E::Float64) = sum(σₜ_all(ty, mat, E))
 
+#=
 function σₜ_all(ty::Type{<:ELSEPAType}, mat::ParametricMaterial, E::Float64)
     return [σₜ(ty, elm, E) * atoms_per_g(elm) * mat.massfrac[i] * density(mat) for (i, elm) in enumerate(mat.elms)]
 end
 
-σₜ(ty::Type{<:ELSEPAType}, mat::ParametricMaterial, E::Real) = sum(σₜ_all(ty, mat, E))
-
+σₜ(ty::Type{<:ELSEPAType}, mat::ParametricMaterial, E::Float64) = sum(σₜ_all(ty, mat, E))
+=#
 
 """
     δσδΩ(::Type{ScreenedRutherford}, θ::Float64, elm::Element, E::Float64)::Float64
@@ -326,6 +325,7 @@ function λ(ty::Type{<:ScreenedRutherfordType}, mfp::Float64, mat::ParametricMat
     σ_tot = sum(σₜ(ty, elm, E) * (atoms_per_g(elm) * mat.massfrac[i] * density(mat)) for (i, elm) in enumerate(mat.elms))
     return 1. / σ_tot
 end
+#=
 function λ(ty::Type{<:ELSEPAType}, mfp::Float64, mat::ParametricMaterial, θ′::Float64, ϕ′::Float64, pc::Electron, E::Float64)
     pos = position(Electron(pc, mfp, θ′, ϕ′, E)) #ToDo: Optimise this
     c = massfractions(mat, pos)
@@ -334,6 +334,7 @@ function λ(ty::Type{<:ELSEPAType}, mfp::Float64, mat::ParametricMaterial, θ′
     σ_tot = sum(σₜ(ty, elm, E) * (atoms_per_g(elm) * mat.massfrac[i] * density(mat)) for (i, elm) in enumerate(mat.elms))
     return 1. / σ_tot
 end
+=#
 function λ(ty::Type{<:ScreenedRutherfordType}, pos::AbstractVector, mat::ParametricMaterial, E::Float64)
     c = massfractions(mat, pos)
     ρ = density(mat)
@@ -341,6 +342,7 @@ function λ(ty::Type{<:ScreenedRutherfordType}, pos::AbstractVector, mat::Parame
     σ_tot = sum(σₜ(ty, elm, E) * (atoms_per_g(elm) * mat.massfrac[i] * density(mat)) for (i, elm) in enumerate(mat.elms))
     return 1. / σ_tot
 end
+#=
 function λ(ty::Type{<:ELSEPAType}, pos::AbstractVector, mat::ParametricMaterial, E::Float64)
     c = massfractions(mat, pos)
     ρ = density(mat)
@@ -348,6 +350,7 @@ function λ(ty::Type{<:ELSEPAType}, pos::AbstractVector, mat::ParametricMaterial
     σ_tot = sum(σₜ(ty, elm, E) * (atoms_per_g(elm) * mat.massfrac[i] * density(mat)) for (i, elm) in enumerate(mat.elms))
     return 1. / σ_tot
 end
+=#
 
 """
     interpolateE(E)
@@ -392,7 +395,7 @@ end
  so we consider all the elements and pick the one with the shortest path. 2) The process is memoryless.
 """
 function Base.rand(
-    ty::Type{<:ScreenedRutherfordType},
+    ty::Type{<:ElasticScatteringCrossSection},
     mat::Material, 
     E::Float64,
 )::NTuple{3,Float64}
@@ -404,6 +407,41 @@ function Base.rand(
     @assert elm′ != elements[119] "Are there any elements in $mat?  Is the density ($(mat[:Density])) too low?"
     return (λ′, rand(ty, elm′, E), 2.0 * π * rand())
 end
+
+function Base.rand(
+    ty::Type{<:ScreenedRutherfordType},
+    pc::Electron,
+    mat::ParametricMaterial, #Material is a function
+    E::Float64,
+    num_iterations::Int
+    )::NTuple{3,Float64}
+    elm′, λ′ = elements[119], 1.0e308
+    σ_arr = σₜ_all(ty, mat, E)
+    σ_tot = sum(σ_arr) 
+    rval = rand() * σ_tot
+    for (elm, sigma_val) in zip(mat.elms, σ_arr)
+        rval -= sigma_val
+        if rval ≤ 0
+            elm′ = elm
+            break
+        end
+    end
+    if elm′ == elements[119]
+        elm′ = mat.elms[end]
+    end
+    r = log(rand())
+    λ′ = -λ(ty, mat, E) * r
+    for i in 1:num_iterations
+        integral, error = quadgk(x -> λ(ty, mat, E), 0, λ′)
+        λ′ = - (integral / λ′) * r
+    end
+    # Mass fractions must be updated every time we propagate electron
+    massfractions(mat, position(Electron(pc, λ′, θ, ϕ, 0.0)))
+    return (λ′, rand(ty, elm′, E), 2.0 * π * rand())
+end
+
+#=
+
 function Base.rand(
     ty::Type{<:ScreenedRutherfordType},
     pc::Electron,
@@ -426,7 +464,7 @@ function Base.rand(
         elm′ = mat.elms[end]
     end
     indexval, ene = interpolateE(E)
-    θ = anglegrid[draw_sample(parametricDD[elm′][indexval])]
+    θ = anglegrid[draw_sample(materialDD[elm′][indexval])]
     #θ = rand(ty, elm′, E)
     ϕ = 2.0 * π * rand()
 
@@ -438,9 +476,8 @@ function Base.rand(
     end
     massfractions(mat, position(Electron(pc, λ′, θ, ϕ, 0.0)))
     #@assert elm′ != elements[119] "Are there any elements in $mat_at_pos?  Is the density ($(mat_at_pos[:Density])) too low?"
-    return (λ′, θ, ϕ)
+    return (λ′, rand(ty, elm′, E), ϕ)
 end
-
 function Base.rand(
     ty::Type{<:ELSEPAType},
     pc::Electron,
@@ -463,7 +500,7 @@ function Base.rand(
         elm′ = mat.elms[end]
     end
     indexval, ene = interpolateE(E)
-    θ = anglegrid[draw_sample(parametricDD[elm′][indexval])]
+    θ = anglegrid[draw_sample(materialDD[elm′][indexval])]
     ϕ = 2.0 * π * rand()
 
     r = log(rand())
@@ -476,6 +513,7 @@ function Base.rand(
     #@assert elm′ != elements[119] "Are there any elements in $mat_at_pos?  Is the density ($(mat_at_pos[:Density])) too low?"
     return (λ′, θ, ϕ)
 end
+=#
 
 
 """

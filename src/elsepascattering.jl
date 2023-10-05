@@ -209,7 +209,6 @@ function draw_sample(va::VoseAlias)
     end
 end
 
-aliasprob = DefaultDict{}
 
 function NeXLCore.δσδΩ(::Type{ELSEPAScatteringCrossSection}, θ::Float64, elm::Element, E::Float64)::Float64
     i, ene = interpolateE(E)
@@ -218,3 +217,35 @@ function NeXLCore.δσδΩ(::Type{ELSEPAScatteringCrossSection}, θ::Float64, el
     angle_sample = anglegrid[draw_sample(va)]
 end
 
+function loadprobs(filenameprob::String, index::Int)
+    probdata = zeros(606, length(export_ecs_energies))
+    open(filenameprob, "r") do io
+        read!(io, probdata)      
+    end
+    return probdata[:,index]
+end
+
+function sample_indices(probabilities::Vector{Float64}, n::Int)
+    return sample(1:length(probabilities), Weights(probabilities), n)
+end
+
+function extract_angles(anglegrid::SVector{606, Float64}, indices::Vector{Int64})
+    return anglegrid[indices]
+end
+
+function plot_histogram(angles::Vector{Float64})
+    histogram(angles, xlabel="Angles", ylabel="Frequency", title="Histogram of Sampled Angles", xlims=(0,10))
+end
+
+va_angles = [anglegrid[draw_sample(parametricDD[n"Cr"][139])] for _ in 1:10_000]
+
+function read_exported_ecs(z::Integer)
+    result = zeros(606, length(export_ecs_energies))
+    path = joinpath(data_dir, @sprintf("penecs%03d.bin", z))
+    open(path, "r") do io
+        read!(io, result)
+    end
+    return result
+end
+
+csdata = read_exported_ecs(24)[:,139]

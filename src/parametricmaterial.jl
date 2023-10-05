@@ -1,22 +1,9 @@
 using StaticArrays
 using DataStructures
 using Printf
-#using Logging
 
 data_dir = joinpath(@__DIR__, "..", "data")
 
-ecs_energies = [
-    5.00e+01, 6.00e+01, 7.00e+01, 8.00e+01, 9.00e+01, 1.00e+02, 1.25e+02, 1.50e+02, 1.75e+02, 2.00e+02,
-    2.50e+02, 3.00e+02, 3.50e+02, 4.00e+02, 4.50e+02, 5.00e+02, 6.00e+02, 7.00e+02, 8.00e+02, 9.00e+02,
-    1.00e+03, 1.25e+03, 1.50e+03, 1.75e+03, 2.00e+03, 2.50e+03, 3.00e+03, 3.50e+03, 4.00e+03, 4.50e+03,
-    5.00e+03, 6.00e+03, 7.00e+03, 8.00e+03, 9.00e+03, 1.00e+04, 1.25e+04, 1.50e+04, 1.75e+04, 2.00e+04,
-    2.50e+04, 3.00e+04, 3.50e+04, 4.00e+04, 4.50e+04, 5.00e+04, 6.00e+04, 7.00e+04, 8.00e+04, 9.00e+04,
-    1.00e+05, 1.25e+05, 1.50e+05, 1.75e+05, 2.00e+05, 2.50e+05, 3.00e+05, 3.50e+05, 4.00e+05, 4.50e+05,
-    5.00e+05, 6.00e+05, 7.00e+05, 8.00e+05, 9.00e+05, 1.00e+06, 1.25e+06, 1.50e+06, 1.75e+06, 2.00e+06,
-    2.50e+06, 3.00e+06, 3.50e+06, 4.00e+06, 4.50e+06, 5.00e+06, 6.00e+06, 7.00e+06, 8.00e+06, 9.00e+06,
-    1.00e+07, 1.25e+07, 1.50e+07, 1.75e+07, 2.00e+07, 2.50e+07, 3.00e+07, 3.50e+07, 4.00e+07, 4.50e+07,
-    5.00e+07, 6.00e+07, 7.00e+07, 8.00e+07, 9.00e+07, 1.00e+08
-]
 
 function linspace(lb, rb, n::Integer)
     h = (rb .- lb) ./ (n-1)
@@ -31,14 +18,12 @@ Logarithmically spaced `n` points between `lb` and `rb`
 logspace(lb, rb, n::Integer) = exp.(linspace(log.(lb), log.(rb), n))
 
 export_ecs_energies = logspace(50.0, 1e5, 200)
-#log_export_ecs_energies = log.(export_ecs_energies)
 
 struct VoseAlias
     alias::Vector{Int}
     prob::Vector{Float64}
 end
 
-# Load the alias tables!
 function loaddata(filenamealias::String, filenameprob::String)
     data = Vector{VoseAlias}()
     aliasdata = zeros(Int, 606, length(export_ecs_energies))
@@ -55,7 +40,7 @@ function loaddata(filenamealias::String, filenameprob::String)
     return data
 end
 
-parametricDD = DefaultDict{Element, Vector{VoseAlias}}(passkey=true) do elm
+materialDD = DefaultDict{Element, Vector{VoseAlias}}(passkey=true) do elm
     filenamealias = joinpath(data_dir, "penatfiles", @sprintf("penat%03d.alias", elm.number))
     filenameprob = joinpath(data_dir, "penatfiles", @sprintf("penat%03d.prob", elm.number))
     println("Reading and caching penat alias file: $filenamealias")
@@ -133,7 +118,7 @@ struct ParametricMaterial{T<:AbstractFloat, N}
         end
         # below is for finding the files for probabilities at given energies
         for elm in elms
-            parametricDD[elm]
+            materialDD[elm]
         end
         atomicweights = SVector{N, T}(atomicweights)
         new{T,N}(name, elms, massfrac, massfracfunc!, atomicweights, ρ, properties)
